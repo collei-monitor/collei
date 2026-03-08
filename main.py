@@ -7,7 +7,9 @@ import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import HTTPException
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.router import api_v1_router
@@ -87,11 +89,23 @@ def create_app() -> FastAPI:
 
     # 托管前端静态资源（SPA）——仅当前端构建产物存在时挂载
     if FRONTEND_DIST.exists():
+        spa_index = FRONTEND_DIST / "index.html"
         application.mount(
             "/",
             StaticFiles(directory=str(FRONTEND_DIST), html=True),
             name="spa",
         )
+
+        # SPA 路由回退：非 API 路径的 404 返回 index.html，由前端路由接管
+        @application.exception_handler(404)
+        async def _spa_fallback(request: Request, exc: HTTPException):
+            if not request.url.path.startswith("/api/") and spa_index.exists():
+                return HTMLResponse(spa_index.read_text(encoding="utf-8"))
+            return HTMLResponse(
+                content='{"detail":"Not Found"}',
+                status_code=404,
+                media_type="application/json",
+            )
 
     return application
 
