@@ -1,0 +1,20 @@
+**/__pycache__/
+**/*.py[cod]
+**/*.pyo
+**/.git/
+**/.gitignore
+**/.DS_Store
+
+# 运行时产物（不打包进镜像）
+collei.db
+collei.egg-info/
+
+# 本地 .env（通过 docker-compose environment 注入）
+.env
+
+# 前端产物目录（由 Dockerfile Stage 1 在构建时生成，无需复制）
+frontend/
+
+# 文档
+markdown/
+*.md

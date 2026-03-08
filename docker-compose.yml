@@ -1,0 +1,27 @@
+services:
+  collei:
+    image: collei:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        FRONTEND_REPO: https://github.com/collei-monitor/collei-web.git
+        FRONTEND_REF: main
+    ports:
+      - "8000:8000"
+    volumes:
+      - collei-data:/data
+    environment:
+      # SQLite 数据库存放在持久化卷中
+      - COLLEI_DATABASE_URL=sqlite+aiosqlite:////data/collei.db
+      # 生产环境必须修改以下两项
+      - COLLEI_SECRET_KEY=KFCxq4vw50-i8Qz-kR7i4XPLRr1bSxQXTVH83D3JI2oxqijX0IYr8XIZE0jgVxo-TCoRi1lOA5bNGzFiFx_Xxw
+      - COLLEI_DEFAULT_ADMIN_PASSWORD=31415926
+      # 可选配置
+      # - COLLEI_DEFAULT_ADMIN_USERNAME=admin
+      # - COLLEI_DEBUG=false
+      # - COLLEI_APP_NAME=Collei
+    restart: unless-stopped
+
+volumes:
+  collei-data:

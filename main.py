@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.router import api_v1_router
 from app.core.config import settings
@@ -13,6 +15,8 @@ from app.db.session import async_session_factory, engine
 
 # 确保所有模型被导入以便 metadata 完整
 import app.db.base  # noqa: F401
+
+FRONTEND_DIST = Path(__file__).parent / "frontend" / "dist"
 
 
 @asynccontextmanager
@@ -55,6 +59,15 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
     application.include_router(api_v1_router)
+
+    # 托管前端静态资源（SPA）——仅当前端构建产物存在时挂载
+    if FRONTEND_DIST.exists():
+        application.mount(
+            "/",
+            StaticFiles(directory=str(FRONTEND_DIST), html=True),
+            name="spa",
+        )
+
     return application
 
 
