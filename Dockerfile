@@ -21,13 +21,17 @@ FROM python:3.12-slim AS runtime
 
 WORKDIR /app
 
+# 确保 /app 目录下的 app 包优先于 site-packages 中的同名桩包被导入
+ENV PYTHONPATH=/app
+
 # 先单独安装依赖，充分利用 Docker 层缓存
 COPY pyproject.toml .
 RUN mkdir -p app && touch app/__init__.py && \
     pip install --no-cache-dir . && \
-    rm -rf app/__init__.py
+    pip uninstall -y collei && \
+    rm -rf app
 
-# 复制后端全部源码
+# 复制后端全部源码（真实 app 包覆盖桩包位置）
 COPY . .
 
 # 复制前端构建产物到 main.py 期望的位置（frontend/dist）
