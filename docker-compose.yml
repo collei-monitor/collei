@@ -10,18 +10,14 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - collei-data:/data
+      - ./data:/data
     environment:
       # SQLite 数据库存放在持久化卷中
       - COLLEI_DATABASE_URL=sqlite+aiosqlite:////data/collei.db
-      # 生产环境必须修改以下两项
-      - COLLEI_SECRET_KEY=KFCxq4vw50-i8Qz-kR7i4XPLRr1bSxQXTVH83D3JI2oxqijX0IYr8XIZE0jgVxo-TCoRi1lOA5bNGzFiFx_Xxw
-      - COLLEI_DEFAULT_ADMIN_PASSWORD=31415926
       # 可选配置
+      # - COLLEI_SECRET_KEY=KFCFKQXSVW50
       # - COLLEI_DEFAULT_ADMIN_USERNAME=admin
+      # - COLLEI_DEFAULT_ADMIN_PASSWORD=
       # - COLLEI_DEBUG=false
       # - COLLEI_APP_NAME=Collei
     restart: unless-stopped
-
-volumes:
-  collei-data:

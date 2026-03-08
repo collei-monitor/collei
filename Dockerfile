@@ -37,8 +37,9 @@ COPY . .
 # 复制前端构建产物到 main.py 期望的位置（frontend/dist）
 COPY --from=frontend-builder /build/dist ./frontend/dist
 
-# 持久化数据卷（SQLite 数据库）
-VOLUME ["/data"]
+# 创建 /data 目录用于挂载本地目录
+# 使用 -v /local/path:/data 挂载本地目录到容器
+RUN mkdir -p /data
 
 EXPOSE 8000
 
