@@ -527,18 +527,21 @@ async def update_group(
     _current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_session),
 ):
-    """更新分组信息."""
+    """更新分组信息，可选择批量更新关联的服务器列表."""
     group = await crud.get_group_by_id(db, group_id)
     if not group:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
 
     update_data = body.model_dump(exclude_unset=True)
-    if not update_data:
+    server_uuids = update_data.pop("server_uuids", None)
+    
+    if not update_data and server_uuids is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No fields to update",
         )
+    
     # 名称唯一性检查
     if "name" in update_data:
         existing = await crud.get_group_by_name(db, update_data["name"])
@@ -547,7 +550,23 @@ async def update_group(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Group name already exists",
             )
-    updated = await crud.update_group(db, group_id, **update_data)
+    
+    # 如果传入了 server_uuids，校验所有服务器exist并设置关联
+    if server_uuids is not None:
+        for uuid in server_uuids:
+            if not await crud.get_server_by_uuid(db, uuid):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Server '{uuid}' not found",
+                )
+        await crud.set_group_servers(db, group_id, server_uuids)
+    
+    # 更新其他字段
+    if update_data:
+        updated = await crud.update_group(db, group_id, **update_data)
+    else:
+        updated = await crud.get_group_by_id(db, group_id)
+    
     return updated
 
 

@@ -142,6 +142,7 @@ class GroupCreate(BaseModel):
 class GroupUpdate(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=64)
     top: int | None = None
+    server_uuids: list[str] | None = Field(None, description="要关联的服务器 UUID 列表（覆盖原有关联）")
 
 
 class GroupRead(BaseModel):

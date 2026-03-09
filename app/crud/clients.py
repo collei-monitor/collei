@@ -282,6 +282,23 @@ async def set_server_groups(
     return list(await get_server_groups(db, server_uuid))
 
 
+async def set_group_servers(
+    db: AsyncSession,
+    group_id: str,
+    server_uuids: list[str],
+) -> list[Server]:
+    """全量替换分组所属服务器."""
+    # 删除原有关联
+    await db.execute(
+        delete(ServerGroup).where(ServerGroup.group_id == group_id))
+    # 批量插入新关联
+    for uuid in server_uuids:
+        db.add(ServerGroup(server_uuid=uuid, group_id=group_id))
+    await db.flush()
+    # 返回最新服务器列表
+    return list(await get_group_servers(db, group_id))
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Batch Operations
 # ═══════════════════════════════════════════════════════════════════════════════
