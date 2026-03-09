@@ -136,6 +136,7 @@ class ServerStatusRead(BaseModel):
 class GroupCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=64)
     top: int | None = None
+    server_uuids: list[str] = Field(default_factory=list, description="创建时关联的服务器 UUID 列表")
 
 
 class GroupUpdate(BaseModel):
@@ -183,3 +184,18 @@ class ServerTopUpdateResponse(BaseModel):
     updated: int = Field(..., description="成功更新的服务器数量")
     failed: int = Field(..., description="更新失败的服务器数量")
     failed_uuids: list[str] = Field(default_factory=list, description="更新失败的 UUID 列表")
+
+
+class GroupTopUpdate(BaseModel):
+    """批量更新分组 top 值的请求模型."""
+    updates: dict[str, int] = Field(
+        ..., description="格式为 {group_id: top_value} 的字典，例如 {'id-1': 100, 'id-2': 200}"
+    )
+
+
+class GroupTopUpdateResponse(BaseModel):
+    """批量更新分组 top 值的响应."""
+    total: int = Field(..., description="请求更新的分组总数")
+    updated: int = Field(..., description="成功更新的分组数量")
+    failed: int = Field(..., description="更新失败的分组数量")
+    failed_ids: list[str] = Field(default_factory=list, description="更新失败的分组 ID 列表")

@@ -17,11 +17,12 @@
   GET    /clients/servers/{uuid}/groups      获取服务器所属分组
   POST   /clients/servers/batch/update-tops  批量更新服务器 top 值
 
-  POST   /clients/groups                     创建分组
+  POST   /clients/groups                     创建分组（可传入 server_uuids 完成关联）
   GET    /clients/groups                     获取分组列表
   PUT    /clients/groups/{id}                更新分组
   DELETE /clients/groups/{id}                删除分组
   GET    /clients/groups/{id}/servers        获取分组下的服务器
+  POST   /clients/groups/batch/update-tops   批量更新分组 top 值
 
   GET    /clients/servers/{uuid}/load        获取服务器监控数据
 """
@@ -43,6 +44,8 @@ from app.schemas.agent import LoadNowRead
 from app.schemas.clients import (
     GroupCreate,
     GroupRead,
+    GroupTopUpdate,
+    GroupTopUpdateResponse,
     GroupUpdate,
     GroupWithServersRead,
     MessageResponse,
@@ -451,15 +454,61 @@ async def create_group(
     _current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_session),
 ):
-    """创建服务器分组."""
+    """创建服务器分组，可在请求体中传入 server_uuids 列表以同时完成关联."""
     existing = await crud.get_group_by_name(db, body.name)
     if existing:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Group name already exists",
         )
-    group = await crud.create_group(db, name=body.name, top=body.top)
+    # 校验所有 server_uuids 是否存在
+    for uuid in body.server_uuids:
+        if not await crud.get_server_by_uuid(db, uuid):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Server '{uuid}' not found",
+            )
+    group = await crud.create_group(
+        db, name=body.name, top=body.top,
+        server_uuids=body.server_uuids or None,
+    )
     return group
+
+
+@router.post("/groups/batch/update-tops", response_model=GroupTopUpdateResponse)
+async def batch_update_group_tops(
+    body: GroupTopUpdate,
+    _current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_session),
+):
+    """批量更新分组的 top 值.
+
+    请求体格式:
+    ```json
+    {
+        "updates": {
+            "group-id-1": 100,
+            "group-id-2": 200
+        }
+    }
+    ```
+    """
+    if not body.updates:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="updates cannot be empty",
+        )
+
+    updated_count, failed_count, failed_ids = await crud.batch_update_group_tops(
+        db, body.updates
+    )
+
+    return GroupTopUpdateResponse(
+        total=len(body.updates),
+        updated=updated_count,
+        failed=failed_count,
+        failed_ids=failed_ids,
+    )
 
 
 @router.get("/groups", response_model=list[GroupRead])

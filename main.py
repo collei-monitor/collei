@@ -80,7 +80,7 @@ async def _ensure_default_configs(application: "FastAPI") -> None:
         # 确保 global_registration_token 存在
         token = await crud_config.get_config_value(session, "global_registration_token")
         if not token:
-            new_token = secrets.token_urlsafe(32)
+            new_token = secrets.token_urlsafe(16)
             await crud_config.set_config(session, "global_registration_token", new_token)
             logger.info("global_registration_token 未配置，已自动生成: %s", new_token)
 

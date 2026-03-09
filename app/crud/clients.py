@@ -212,11 +212,19 @@ async def get_all_groups(db: AsyncSession) -> Sequence[Group]:
 
 
 async def create_group(
-    db: AsyncSession, *, name: str, top: int | None = None
+    db: AsyncSession,
+    *,
+    name: str,
+    top: int | None = None,
+    server_uuids: list[str] | None = None,
 ) -> Group:
     group = Group(name=name, top=top)
     db.add(group)
     await db.flush()
+    if server_uuids:
+        for uuid in server_uuids:
+            db.add(ServerGroup(server_uuid=uuid, group_id=group.id))
+        await db.flush()
     return group
 
 
@@ -311,3 +319,37 @@ async def batch_update_server_tops(
 
     await db.commit()
     return updated_count, failed_count, failed_uuids
+
+
+async def batch_update_group_tops(
+    db: AsyncSession,
+    updates: dict[str, int],
+) -> tuple[int, int, list[str]]:
+    """批量更新分组的 top 值.
+
+    Args:
+        updates: 格式为 {group_id: top_value} 的字典
+
+    Returns:
+        (成功更新数, 失败数, 失败的ID列表)
+    """
+    updated_count = 0
+    failed_count = 0
+    failed_ids: list[str] = []
+
+    for group_id, top_val in updates.items():
+        group = await get_group_by_id(db, group_id)
+        if not group:
+            failed_count += 1
+            failed_ids.append(group_id)
+            continue
+
+        try:
+            await update_group(db, group_id, top=top_val)
+            updated_count += 1
+        except Exception:
+            failed_count += 1
+            failed_ids.append(group_id)
+
+    await db.commit()
+    return updated_count, failed_count, failed_ids
