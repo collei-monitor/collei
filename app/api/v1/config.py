@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
+from app.core.config_cache import config_cache
 from app.core.geoip import DB_FILES, list_available_dbs
 from app.crud import config as crud_config
 from app.db.session import get_async_session
@@ -29,6 +30,10 @@ router = APIRouter(prefix="/config", tags=["config"])
 _WRITABLE_KEYS = {
     "ip_db",
     "global_registration_token",
+    "app_name",
+    "offline_threshold_seconds",
+    "offline_check_interval",
+    "load_retain_seconds",
 }
 
 # ip_db 的合法值
@@ -100,6 +105,7 @@ async def set_config(
             detail=f"Invalid ip_db value '{body.value}'. Available: {sorted(_VALID_DB_NAMES)}",
         )
     config = await crud_config.set_config(db, key, body.value)
+    config_cache.set(key, config.value)
     return ConfigItem(key=config.key, value=config.value)
 
 
@@ -121,3 +127,4 @@ async def delete_config(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Config key '{key}' not found",
         )
+    config_cache.delete(key)

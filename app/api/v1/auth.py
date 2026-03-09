@@ -360,7 +360,9 @@ async def setup_2fa(
     # 将密钥临时存储 — 标记为 "pending:" 前缀表示未激活
     await crud.update_user(db, current_user.uuid, two_factor=f"pending:{secret}")
 
-    otpauth_url = get_totp_uri(secret, current_user.username)
+    from app.crud import config as crud_config
+    app_name = await crud_config.get_config_value(db, "app_name") or "Collei"
+    otpauth_url = get_totp_uri(secret, current_user.username, app_name)
     return TwoFactorSetupResponse(secret=secret, otpauth_url=otpauth_url)
 
 

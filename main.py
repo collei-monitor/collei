@@ -31,7 +31,7 @@ async def lifespan(application: FastAPI):
     from app.core.tasks import background_tasks
 
     await _ensure_default_admin()
-    await _ensure_global_registration_token()
+    await _ensure_default_configs(application)
     await background_tasks.start()
     yield
     # shutdown
@@ -43,18 +43,17 @@ async def _ensure_default_admin() -> None:
     """如果 users 表为空，创建默认管理员账号（密码未配置时随机生成并打印日志）."""
     from app.crud.auth import create_user, get_user_by_username
 
-    password = settings.DEFAULT_ADMIN_PASSWORD
-    if not password:
-        password = secrets.token_urlsafe(12)
-        logger.warning(
-            "COLLEI_DEFAULT_ADMIN_PASSWORD 未设置，已为用户 '%s' 生成随机密码: %s",
-            settings.DEFAULT_ADMIN_USERNAME,
-            password,
-        )
-
     async with async_session_factory() as session:
         existing = await get_user_by_username(session, settings.DEFAULT_ADMIN_USERNAME)
         if existing is None:
+            password = settings.DEFAULT_ADMIN_PASSWORD
+            if not password:
+                password = secrets.token_urlsafe(12)
+                logger.warning(
+                    "COLLEI_DEFAULT_ADMIN_PASSWORD 未设置，已为用户 '%s' 生成随机密码: %s",
+                    settings.DEFAULT_ADMIN_USERNAME,
+                    password,
+                )
             await create_user(
                 session,
                 username=settings.DEFAULT_ADMIN_USERNAME,
@@ -63,23 +62,51 @@ async def _ensure_default_admin() -> None:
             await session.commit()
 
 
-async def _ensure_global_registration_token() -> None:
-    """如果 global_registration_token 未配置，自动生成并存入数据库."""
+# 各配置项的默认值（仅在数据库中不存在时写入）
+_DEFAULT_CONFIGS: dict[str, str] = {
+    "ip_db": "GeoLite2",
+    "app_name": "Collei",
+    "offline_threshold_seconds": "10",
+    "offline_check_interval": "2",
+    "load_retain_seconds": "80",
+}
+
+
+async def _ensure_default_configs(application: "FastAPI") -> None:
+    """初始化 config 表的默认配置项，并确保 global_registration_token 存在."""
     from app.crud import config as crud_config
 
     async with async_session_factory() as session:
+        # 确保 global_registration_token 存在
         token = await crud_config.get_config_value(session, "global_registration_token")
         if not token:
             new_token = secrets.token_urlsafe(32)
             await crud_config.set_config(session, "global_registration_token", new_token)
-            logger.info(
-                "global_registration_token 未配置，已自动生成: %s", new_token
-            )
+            logger.info("global_registration_token 未配置，已自动生成: %s", new_token)
+
+        # 初始化其余默认配置（仅在数据库中不存在时写入）
+        for key, default_value in _DEFAULT_CONFIGS.items():
+            existing = await crud_config.get_config_value(session, key)
+            if existing is None:
+                await crud_config.set_config(session, key, default_value)
+
+        # 从数据库读取 app_name 并更新 FastAPI 应用标题
+        app_name = await crud_config.get_config_value(session, "app_name")
+        if app_name:
+            application.title = app_name
+
+        # 预加载配置缓存（覆盖本次刚写入的所有初始值）
+        from app.core.config_cache import config_cache
+        await config_cache.preload(session)
+
+        # 预加载服务器数据缓存（离线检测与广播快照均从内存读取）
+        from app.core.server_cache import server_cache
+        await server_cache.preload(session)
 
 
 def create_app() -> FastAPI:
     application = FastAPI(
-        title=settings.APP_NAME,
+        title="Collei",
         version="0.1.0",
         docs_url="/docs" if settings.DEBUG else None,
         redoc_url="/redoc" if settings.DEBUG else None,

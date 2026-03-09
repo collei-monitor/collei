@@ -34,6 +34,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_optional_user
+from app.core.server_cache import server_cache
 from app.crud import clients as crud
 from app.db.session import get_async_session
 from app.models.auth import User
@@ -270,6 +271,7 @@ async def update_server(
             detail="No fields to update",
         )
     updated = await crud.update_server(db, uuid, **update_data)
+    server_cache.update_server(uuid, update_data)
     return updated
 
 
@@ -302,6 +304,11 @@ async def batch_update_server_tops(
         db, body.updates
     )
 
+    # 同步缓存中的 top 值
+    for uuid, top_val in body.updates.items():
+        if uuid not in failed_uuids:
+            server_cache.update_server(uuid, {"top": top_val})
+
     return ServerTopUpdateResponse(
         total=len(body.updates),
         updated=updated_count,
@@ -321,6 +328,7 @@ async def delete_server(
     if not deleted:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Server not found")
+    server_cache.remove_server(uuid)
     return MessageResponse(message="Server deleted")
 
 
@@ -341,6 +349,15 @@ async def approve_server(
             detail="Server already approved",
         )
     updated = await crud.approve_server(db, uuid)
+    server_cache.update_server(uuid, {
+        "uuid": uuid, "name": server.name, "top": server.top,
+        "cpu_name": server.cpu_name, "cpu_cores": server.cpu_cores,
+        "arch": server.arch, "os": server.os, "region": server.region,
+        "mem_total": server.mem_total, "swap_total": server.swap_total,
+        "disk_total": server.disk_total, "virtualization": server.virtualization,
+        "hidden": server.hidden, "is_approved": 1,
+        "created_at": server.created_at,
+    })
     return updated
 
 

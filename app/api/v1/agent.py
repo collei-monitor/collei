@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.geoip import DEFAULT_DB, lookup_country
+from app.core.server_cache import server_cache
 from app.crud import clients as crud_clients
 from app.crud import monitoring as crud_monitoring
 from app.db.session import get_async_session
@@ -191,6 +192,7 @@ async def agent_report(
         )
 
     # ── 写入监控数据（如果有） ──
+    load_dict: dict = {}
     if body.load_data:
         load_dict = body.load_data.model_dump(exclude_none=True)
         if load_dict:
@@ -209,6 +211,15 @@ async def agent_report(
         last_online=now,
         boot_time=body.boot_time,
     )
+
+    # ── 同步内存缓存 ──
+    if hardware_fields:
+        server_cache.update_server(server.uuid, hardware_fields)
+    server_cache.update_status(
+        server.uuid, status=1, last_online=now, boot_time=body.boot_time,
+    )
+    if load_dict:
+        server_cache.update_load(server.uuid, load_dict)
 
     return AgentReportResponse(
         uuid=server.uuid,

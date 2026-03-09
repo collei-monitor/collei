@@ -30,7 +30,6 @@ class Settings(BaseSettings):
     )
 
     # ── 应用 ──────────────────────────────────────────────
-    APP_NAME: str = "Collei"
     DEBUG: bool = False
 
     # ── 数据库 ────────────────────────────────────────────
@@ -52,10 +51,7 @@ class Settings(BaseSettings):
     DEFAULT_ADMIN_PASSWORD: str = ""  # 为空时由程序随机生成并打印日志
 
     # ── 后台任务 ──────────────────────────────────────────
-    OFFLINE_THRESHOLD_SECONDS: int = 10  # 超过此时间未上报视为离线
-    OFFLINE_CHECK_INTERVAL: int = 2  # 离线检测任务周期（秒）
     WS_BROADCAST_INTERVAL: float = 2.0  # WebSocket 广播周期（秒）
-    LOAD_RETAIN_SECONDS: int = 80  # 实时监控数据保留时长（秒），作用于表load_now
 
     @model_validator(mode="after")
     def _auto_generate_secret_key(self) -> "Settings":
@@ -64,7 +60,7 @@ class Settings(BaseSettings):
             self.SECRET_KEY = secrets.token_urlsafe(64)
             _log.warning(
                 "COLLEI_SECRET_KEY 未设置，已自动生成临时密钥。"
-                "重启后所有会话将失效，请在 .env 中设置 COLLEI_SECRET_KEY 以持久化。"
+                "重启后所有会话将失效，请在 .env 或 环境变量 中设置 COLLEI_SECRET_KEY 以持久化。"
             )
         return self
 

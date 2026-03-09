@@ -63,8 +63,8 @@ def generate_totp_secret() -> str:
     return pyotp.random_base32()
 
 
-def get_totp_uri(secret: str, username: str) -> str:
-    return pyotp.TOTP(secret).provisioning_uri(name=username, issuer_name=settings.APP_NAME)
+def get_totp_uri(secret: str, username: str, issuer_name: str = "Collei") -> str:
+    return pyotp.TOTP(secret).provisioning_uri(name=username, issuer_name=issuer_name)
 
 
 def verify_totp(secret: str, code: str) -> bool:
