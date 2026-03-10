@@ -18,6 +18,7 @@ dependencies = [
     "httpx>=0.28",
     "pyotp>=2.9",
     "maxminddb>=2.0",
+    "aiosmtplib>=5.0",
 ]
 
 [project.optional-dependencies]

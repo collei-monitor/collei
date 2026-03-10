@@ -61,7 +61,6 @@ async def create_server(
         uuid=server.uuid,
         name=server.name,
         token=server.token,  # type: ignore[arg-type]
-        install_hint=f"install.sh --url=<YOUR_API_URL> --token={server.token}",
     )
 
 

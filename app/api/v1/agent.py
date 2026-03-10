@@ -99,7 +99,8 @@ async def agent_verify(
     body: AgentVerifyRequest,
     db: AsyncSession = Depends(get_async_session),
 ):
-    """Agent 被动注册验证 — 使用管理员下发的 token.
+    """Agent 被动注册验证使用管理员下发的 token
+    或已注册服务器的 token 验证（Agent重启时验证）.
 
     流程:
       1. 根据 token 查找服务器记录
@@ -125,6 +126,15 @@ async def agent_verify(
 
     # 确保存在 server_status 记录
     await crud_clients.upsert_server_status(db, server.uuid)
+
+    # 同步内存缓存（is_approved==1 时写入，0 时 update_server 内部直接返回）
+    server_snap: dict = {f: getattr(server, f, None) for f in (
+        "name", "top", "cpu_name", "cpu_cores", "arch", "os",
+        "region", "mem_total", "swap_total", "disk_total", "virtualization",
+        "hidden", "is_approved", "created_at", "token", "enable_statistics_mode",
+    )}
+    server_snap.update(hardware)  # 覆盖已更新的硬件字段（含解析后的 region）
+    server_cache.update_server(server.uuid, server_snap)
 
     return AgentVerifyResponse(
         uuid=server.uuid,
@@ -155,18 +165,30 @@ async def agent_report(
       4. 如果携带监控数据，写入 load_now 表
       5. 更新 server_status（在线时间、状态）
     """
-    server = await crud_clients.get_server_by_token(db, body.token)
-    if not server:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
-        )
+    # 优先从内存缓存查 token（缓存仅含 is_approved==1 的服务器）
+    cached_uuid = server_cache.get_uuid_by_token(body.token)
+    if cached_uuid:
+        cached_info = server_cache._servers[cached_uuid]
 
-    if server.is_approved != 1:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Server not approved",
-        )
+        class _CachedServer:
+            uuid = cached_uuid
+            is_approved: int = 1  # 只有 is_approved==1 的服务器才在缓存中
+            enable_statistics_mode: int = cached_info.get("enable_statistics_mode", 0)  # type: ignore[assignment]
+
+        server = _CachedServer()  # type: ignore[assignment]
+    else:
+        # 缓存未命中（启动预热前或 token 不合法）→ 回落数据库
+        server = await crud_clients.get_server_by_token(db, body.token)
+        if not server:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token",
+            )
+        if server.is_approved != 1:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Server not approved",
+            )
 
     now = int(time.time())
 

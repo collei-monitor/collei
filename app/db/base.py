@@ -25,3 +25,13 @@ from app.models.monitoring import LoadNow, TrafficHourlyStat  # noqa: F401
 
 # ── Configs ──
 from app.models.config import Config  # noqa: F401
+
+# ── Notification & Alerts ──
+from app.models.notification import (  # noqa: F401
+    AlertChannel,
+    AlertHistory,
+    AlertRule,
+    AlertRuleMapping,
+    Log,
+    MessageSenderProvider,
+)

@@ -32,10 +32,19 @@ class BackgroundTasks:
         self._tasks.append(asyncio.create_task(self._check_offline_servers()))
         self._tasks.append(asyncio.create_task(self._broadcast_snapshot()))
         self._tasks.append(asyncio.create_task(self._purge_old_load()))
+
+        # 启动告警状态机引擎
+        from app.core.alert_engine import alert_engine
+        await alert_engine.start()
+
         print("✅ 后台任务已启动")
 
     async def stop(self) -> None:
         """停止所有后台任务."""
+        # 停止告警引擎
+        from app.core.alert_engine import alert_engine
+        await alert_engine.stop()
+
         for task in self._tasks:
             task.cancel()
             try:

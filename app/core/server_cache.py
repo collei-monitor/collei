@@ -27,11 +27,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.clients import Server, ServerStatus
 from app.models.monitoring import LoadNow
 
-# 广播快照需要的 Server 字段
+# 广播快照需要的 Server 字段（含 token 用于缓存鉴权）
 _SERVER_FIELDS = (
     "uuid", "name", "top", "cpu_name", "cpu_cores", "arch", "os",
     "region", "mem_total", "swap_total", "disk_total", "virtualization",
-    "hidden", "is_approved", "created_at",
+    "hidden", "is_approved", "created_at", "token", "enable_statistics_mode",
 )
 
 # LoadNow 中需要缓存的字段
@@ -51,6 +51,8 @@ class ServerCache:
         self._statuses: dict[str, dict[str, Any]] = {}
         # uuid → 最新 load 数据
         self._loads: dict[str, dict[str, Any]] = {}
+        # token → uuid 反向索引
+        self._token_index: dict[str, str] = {}
 
     # ─────────────────────────────────────────────────────────────────────
     # 预加载
@@ -63,10 +65,13 @@ class ServerCache:
         servers = (await db.execute(stmt)).scalars().all()
 
         self._servers.clear()
+        self._token_index.clear()
         for s in servers:
             self._servers[s.uuid] = {
                 f: getattr(s, f) for f in _SERVER_FIELDS
             }
+            if s.token:
+                self._token_index[s.token] = s.uuid
 
         uuids = list(self._servers.keys())
         if not uuids:
@@ -120,10 +125,19 @@ class ServerCache:
                 return
             self._servers[uuid] = {f: info.get(f) for f in _SERVER_FIELDS}
             self._servers[uuid]["uuid"] = uuid
+            if info.get("token"):
+                self._token_index[info["token"]] = uuid
         else:
+            old_token = existing.get("token")
             for k, v in info.items():
                 if k in existing:
                     existing[k] = v
+            new_token = existing.get("token")
+            # 维护 token 反向索引
+            if old_token and old_token != new_token:
+                self._token_index.pop(old_token, None)
+            if new_token:
+                self._token_index[new_token] = uuid
 
     def update_status(
         self,
@@ -157,9 +171,15 @@ class ServerCache:
 
     def remove_server(self, uuid: str) -> None:
         """从缓存中移除服务器及其关联数据."""
-        self._servers.pop(uuid, None)
+        srv = self._servers.pop(uuid, None)
+        if srv and srv.get("token"):
+            self._token_index.pop(srv["token"], None)
         self._statuses.pop(uuid, None)
         self._loads.pop(uuid, None)
+
+    def get_uuid_by_token(self, token: str) -> str | None:
+        """通过 token 查找 uuid（O(1)，仅覆盖 is_approved==1 的服务器）."""
+        return self._token_index.get(token)
 
     # ─────────────────────────────────────────────────────────────────────
     # 离线检测
