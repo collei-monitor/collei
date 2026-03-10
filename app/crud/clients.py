@@ -13,6 +13,7 @@ from sqlalchemy.orm import selectinload
 from app.models.clients import (
     Group,
     Server,
+    ServerBillingRule,
     ServerGroup,
     ServerStatus,
 )
@@ -153,6 +154,8 @@ async def upsert_server_status(
     last_online: int | None = None,
     current_run_id: str | None = None,
     boot_time: int | None = None,
+    total_flow_out: int | None = None,
+    total_flow_in: int | None = None,
 ) -> ServerStatus:
     """更新或创建服务器状态记录."""
     existing = await get_server_status(db, uuid)
@@ -166,6 +169,10 @@ async def upsert_server_status(
             values["current_run_id"] = current_run_id
         if boot_time is not None:
             values["boot_time"] = boot_time
+        if total_flow_out is not None:
+            values["total_flow_out"] = total_flow_out
+        if total_flow_in is not None:
+            values["total_flow_in"] = total_flow_in
         if values:
             await db.execute(
                 update(ServerStatus).where(
@@ -180,6 +187,8 @@ async def upsert_server_status(
         last_online=last_online,
         current_run_id=current_run_id,
         boot_time=boot_time,
+        total_flow_out=total_flow_out,
+        total_flow_in=total_flow_in,
     )
     db.add(ss)
     await db.flush()
@@ -370,3 +379,44 @@ async def batch_update_group_tops(
 
     await db.commit()
     return updated_count, failed_count, failed_ids
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Server Billing Rules
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def get_billing_rule(
+    db: AsyncSession, uuid: str,
+) -> ServerBillingRule | None:
+    result = await db.execute(
+        select(ServerBillingRule).where(ServerBillingRule.uuid == uuid))
+    return result.scalar_one_or_none()
+
+
+async def upsert_billing_rule(
+    db: AsyncSession,
+    uuid: str,
+    **kwargs,
+) -> ServerBillingRule:
+    """创建或更新服务器计费规则."""
+    existing = await get_billing_rule(db, uuid)
+    if existing:
+        if kwargs:
+            await db.execute(
+                update(ServerBillingRule)
+                .where(ServerBillingRule.uuid == uuid)
+                .values(**kwargs)
+            )
+            await db.flush()
+        return (await get_billing_rule(db, uuid))  # type: ignore[return-value]
+
+    rule = ServerBillingRule(uuid=uuid, **kwargs)
+    db.add(rule)
+    await db.flush()
+    return rule
+
+
+async def delete_billing_rule(db: AsyncSession, uuid: str) -> bool:
+    result = await db.execute(
+        delete(ServerBillingRule).where(ServerBillingRule.uuid == uuid))
+    return (result.rowcount or 0) > 0

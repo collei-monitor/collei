@@ -104,6 +104,10 @@ class AgentReportRequest(BaseModel):
     # ── 系统启动时间（可选） ──
     boot_time: int | None = Field(None, ge=0, description="系统启动时间戳（由 Agent 上报）")
 
+    # ── 累积流量（可选） ──
+    total_flow_out: int | None = Field(None, ge=0, description="累积出站流量 (Bytes)")
+    total_flow_in: int | None = Field(None, ge=0, description="累积入站流量 (Bytes)")
+
     # ── 资源使用数据（可选） ──
     load_data: LoadData | None = Field(None, description="实时资源监控数据")
 

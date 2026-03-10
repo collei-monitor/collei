@@ -30,6 +30,7 @@ class ServerUpdate(BaseModel):
     top: int | None = None
     hidden: int | None = Field(None, ge=0, le=1)
     region: str | None = None
+    enable_statistics_mode: int | None = Field(None, ge=0, le=1)
 
 
 class ServerRead(BaseModel):
@@ -54,6 +55,7 @@ class ServerRead(BaseModel):
     top: int = 0
     hidden: int = 0
     is_approved: int = 0
+    enable_statistics_mode: int = 0
     created_at: int | None = None
 
     model_config = {"from_attributes": True}
@@ -73,6 +75,7 @@ class ServerBrief(BaseModel):
     top: int = 0
     hidden: int = 0
     is_approved: int = 0
+    enable_statistics_mode: int = 0
     created_at: int | None = None
 
     # 内联状态
@@ -125,6 +128,8 @@ class ServerStatusRead(BaseModel):
     last_online: int | None = None
     current_run_id: str | None = None
     boot_time: int | None = None
+    total_flow_out: int | None = None
+    total_flow_in: int | None = None
 
     model_config = {"from_attributes": True}
 
@@ -200,3 +205,45 @@ class GroupTopUpdateResponse(BaseModel):
     updated: int = Field(..., description="成功更新的分组数量")
     failed: int = Field(..., description="更新失败的分组数量")
     failed_ids: list[str] = Field(default_factory=list, description="更新失败的分组 ID 列表")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Server Billing Rules
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class BillingRuleCreate(BaseModel):
+    """创建/更新服务器计费规则."""
+    billing_cycle: int | None = Field(None, description="计费周期数值")
+    billing_cycle_data: int | None = Field(None, description="计费周期数据")
+    billing_cycle_cost: float | None = Field(None, description="周期费用")
+    traffic_reset_day: int | None = Field(None, description="流量重置日")
+    traffic_threshold: int | None = Field(None, ge=0, description="周期流量阈值 (Bytes)")
+    accounting_mode: int | None = Field(None, ge=1, le=5,
+        description="流量计算模式: 1-仅出站 2-仅入站 3-进出总和 4-取最大 5-取最小")
+
+
+class BillingRuleRead(BaseModel):
+    """服务器计费规则读取模型."""
+    uuid: str
+    billing_cycle: int | None = None
+    billing_cycle_data: int | None = None
+    billing_cycle_cost: float | None = None
+    traffic_reset_day: int | None = None
+    traffic_threshold: int | None = None
+    accounting_mode: int | None = None
+
+    model_config = {"from_attributes": True}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Traffic Hourly Stats
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TrafficHourlyStatRead(BaseModel):
+    """流量统计读取模型."""
+    server_uuid: str
+    time: int
+    net_in: int = 0
+    net_out: int = 0
+
+    model_config = {"from_attributes": True}

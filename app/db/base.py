@@ -15,12 +15,13 @@ from app.models.auth import (  # noqa: F401
 from app.models.clients import (  # noqa: F401
     Group,
     Server,
+    ServerBillingRule,
     ServerGroup,
     ServerStatus,
 )
 
 # ── Monitoring ──
-from app.models.monitoring import LoadNow  # noqa: F401
+from app.models.monitoring import LoadNow, TrafficHourlyStat  # noqa: F401
 
 # ── Configs ──
 from app.models.config import Config  # noqa: F401

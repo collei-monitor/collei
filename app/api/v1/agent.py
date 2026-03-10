@@ -203,13 +203,34 @@ async def agent_report(
                 ts=now,
             )
 
+            # ── 流量统计模式：累加到 traffic_hourly_stats ──
+            if server.enable_statistics_mode == 1:
+                net_in = load_dict.get("net_in")
+                net_out = load_dict.get("net_out")
+                if net_in is not None or net_out is not None:
+                    await crud_monitoring.upsert_traffic_hourly(
+                        db,
+                        server_uuid=server.uuid,
+                        net_in=net_in or 0,
+                        net_out=net_out or 0,
+                        ts=now,
+                    )
+
     # ── 更新服务器状态为在线 ──
-    await crud_clients.upsert_server_status(
-        db,
-        server.uuid,
+    status_kwargs: dict = dict(
         status_val=1,
         last_online=now,
         boot_time=body.boot_time,
+    )
+    if body.total_flow_out is not None:
+        status_kwargs["total_flow_out"] = body.total_flow_out
+    if body.total_flow_in is not None:
+        status_kwargs["total_flow_in"] = body.total_flow_in
+
+    await crud_clients.upsert_server_status(
+        db,
+        server.uuid,
+        **status_kwargs,
     )
 
     # ── 同步内存缓存 ──

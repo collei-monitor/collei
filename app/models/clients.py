@@ -8,6 +8,7 @@ import time
 import uuid as _uuid
 
 from sqlalchemy import (
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -71,6 +72,8 @@ class Server(Base):
         Integer, default=0, server_default=text("0"))
     is_approved: Mapped[int] = mapped_column(
         Integer, default=0, server_default=text("0"))
+    enable_statistics_mode: Mapped[int] = mapped_column(
+        Integer, default=0, server_default=text("0"))
 
     created_at: Mapped[int] = mapped_column(Integer, default=_now)
 
@@ -101,6 +104,8 @@ class ServerStatus(Base):
     last_online: Mapped[int | None] = mapped_column(Integer)
     current_run_id: Mapped[str | None] = mapped_column(String)
     boot_time: Mapped[int | None] = mapped_column(Integer)
+    total_flow_out: Mapped[int | None] = mapped_column(Integer)
+    total_flow_in: Mapped[int | None] = mapped_column(Integer)
 
     server: Mapped["Server"] = relationship(
         "Server", back_populates="status")
@@ -147,3 +152,22 @@ class ServerGroup(Base):
         "Server", back_populates="group_links")
     group: Mapped["Group"] = relationship(
         "Group", back_populates="server_links")
+
+
+# ─── Server Billing Rules ─────────────────────────────────────────────────────
+
+class ServerBillingRule(Base):
+    """服务器计费规则表 — 定义计费策略和流量计算方式."""
+
+    __tablename__ = "server_billing_rules"
+
+    uuid: Mapped[str] = mapped_column(
+        String, ForeignKey("servers.uuid", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    billing_cycle: Mapped[int | None] = mapped_column(Integer)
+    billing_cycle_data: Mapped[int | None] = mapped_column(Integer)
+    billing_cycle_cost: Mapped[float | None] = mapped_column(Float)
+    traffic_reset_day: Mapped[int | None] = mapped_column(Integer)
+    traffic_threshold: Mapped[int | None] = mapped_column(Integer)
+    accounting_mode: Mapped[int | None] = mapped_column(Integer)

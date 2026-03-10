@@ -42,6 +42,8 @@ from app.models.auth import User
 from app.crud import monitoring as crud_monitoring
 from app.schemas.agent import LoadNowRead
 from app.schemas.clients import (
+    BillingRuleCreate,
+    BillingRuleRead,
     GroupCreate,
     GroupRead,
     GroupTopUpdate,
@@ -59,6 +61,7 @@ from app.schemas.clients import (
     ServerTopUpdate,
     ServerTopUpdateResponse,
     ServerUpdate,
+    TrafficHourlyStatRead,
 )
 
 router = APIRouter(prefix="/clients", tags=["clients"])
@@ -636,3 +639,81 @@ async def get_server_load(
     else:
         records = await crud_monitoring.get_load_now(db, uuid, limit=limit)
     return records
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Server Billing Rules（需认证）
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/servers/{uuid}/billing", response_model=BillingRuleRead | None)
+async def get_billing_rule(
+    uuid: str,
+    _current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_session),
+):
+    """获取服务器的计费规则."""
+    server = await crud.get_server_by_uuid(db, uuid)
+    if not server:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Server not found")
+    return await crud.get_billing_rule(db, uuid)
+
+
+@router.put("/servers/{uuid}/billing", response_model=BillingRuleRead)
+async def upsert_billing_rule(
+    uuid: str,
+    body: BillingRuleCreate,
+    _current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_session),
+):
+    """创建或更新服务器的计费规则."""
+    server = await crud.get_server_by_uuid(db, uuid)
+    if not server:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Server not found")
+    data = body.model_dump(exclude_unset=True)
+    return await crud.upsert_billing_rule(db, uuid, **data)
+
+
+@router.delete("/servers/{uuid}/billing", response_model=MessageResponse)
+async def delete_billing_rule(
+    uuid: str,
+    _current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_session),
+):
+    """删除服务器的计费规则."""
+    server = await crud.get_server_by_uuid(db, uuid)
+    if not server:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Server not found")
+    deleted = await crud.delete_billing_rule(db, uuid)
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Billing rule not found")
+    return MessageResponse(message="Billing rule deleted")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Traffic Hourly Stats（需认证）
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.get(
+    "/servers/{uuid}/traffic",
+    response_model=list[TrafficHourlyStatRead],
+)
+async def get_traffic_stats(
+    uuid: str,
+    start_time: int = Query(..., description="查询起始时间戳"),
+    end_time: int = Query(..., description="查询结束时间戳"),
+    _current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_session),
+):
+    """获取服务器指定时间范围内的小时级流量统计."""
+    server = await crud.get_server_by_uuid(db, uuid)
+    if not server:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Server not found")
+    return await crud_monitoring.get_traffic_hourly_range(
+        db, uuid, start_time=start_time, end_time=end_time,
+    )
