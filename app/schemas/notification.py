@@ -119,6 +119,13 @@ class AlertRuleMappingCreate(BaseModel):
     channel_id: int
 
 
+class AlertRuleMappingBatchCreate(BaseModel):
+    """批量创建告警规则映射（同一 target_type 和 channel，多个 target_id）."""
+    target_type: str = Field(..., description="server / group / global")
+    target_ids: list[str] = Field(..., min_length=1, description="服务器 UUID 或组 ID 列表")
+    channel_id: int
+
+
 class AlertRuleMappingRead(BaseModel):
     rule_id: int
     target_type: str
@@ -126,6 +133,11 @@ class AlertRuleMappingRead(BaseModel):
     channel_id: int
 
     model_config = {"from_attributes": True}
+
+
+class AlertRuleMappingBatchRead(BaseModel):
+    created: list[AlertRuleMappingRead]
+    skipped: list[str] = Field(default_factory=list, description="已存在、被跳过的 target_id")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

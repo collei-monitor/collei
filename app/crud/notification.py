@@ -175,6 +175,42 @@ async def create_rule_mapping(
     return mapping
 
 
+async def create_rule_mappings_batch(
+    db: AsyncSession,
+    *,
+    rule_id: int,
+    target_type: str,
+    target_ids: list[str],
+    channel_id: int,
+) -> tuple[list[AlertRuleMapping], list[str]]:
+    """批量创建告警规则映射，跳过已存在的条目，返回 (created, skipped)."""
+    existing_result = await db.execute(
+        select(AlertRuleMapping).where(
+            AlertRuleMapping.rule_id == rule_id,
+            AlertRuleMapping.target_type == target_type,
+            AlertRuleMapping.channel_id == channel_id,
+        )
+    )
+    existing_ids = {m.target_id for m in existing_result.scalars().all()}
+
+    to_create = [tid for tid in target_ids if tid not in existing_ids]
+    skipped = [tid for tid in target_ids if tid in existing_ids]
+
+    mappings = [
+        AlertRuleMapping(
+            rule_id=rule_id,
+            target_type=target_type,
+            target_id=tid,
+            channel_id=channel_id,
+        )
+        for tid in to_create
+    ]
+    if mappings:
+        db.add_all(mappings)
+        await db.flush()
+    return mappings, skipped
+
+
 async def delete_rule_mapping(
     db: AsyncSession,
     *,

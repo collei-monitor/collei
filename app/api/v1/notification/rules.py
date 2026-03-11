@@ -24,6 +24,8 @@ from app.db.session import get_async_session
 from app.models.auth import User
 from app.schemas.notification import (
     AlertRuleCreate,
+    AlertRuleMappingBatchCreate,
+    AlertRuleMappingBatchRead,
     AlertRuleMappingCreate,
     AlertRuleMappingRead,
     AlertRuleRead,
@@ -136,16 +138,16 @@ async def list_rule_mappings(
 
 @router.post(
     "/rules/{rule_id}/mappings",
-    response_model=AlertRuleMappingRead,
+    response_model=AlertRuleMappingBatchRead,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_rule_mapping(
+async def create_rule_mappings(
     rule_id: int,
-    body: AlertRuleMappingCreate,
+    body: AlertRuleMappingBatchCreate,
     _current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_session),
 ):
-    """为告警规则添加映射."""
+    """为告警规则批量添加映射（支持多个服务器或组）."""
     rule = await crud.get_rule(db, rule_id)
     if not rule:
         raise HTTPException(
@@ -164,15 +166,19 @@ async def create_rule_mapping(
             detail=f"Channel '{body.channel_id}' not found",
         )
 
-    result = await crud.create_rule_mapping(
+    created, skipped = await crud.create_rule_mappings_batch(
         db,
         rule_id=rule_id,
         target_type=body.target_type,
-        target_id=body.target_id,
+        target_ids=body.target_ids,
         channel_id=body.channel_id,
     )
-    await _reload_engine()
-    return result
+    if created:
+        await _reload_engine()
+    return AlertRuleMappingBatchRead(
+        created=[AlertRuleMappingRead.model_validate(m) for m in created],
+        skipped=skipped,
+    )
 
 
 @router.delete("/rules/{rule_id}/mappings", response_model=MessageResponse)

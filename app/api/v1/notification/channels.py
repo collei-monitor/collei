@@ -6,6 +6,7 @@
   GET     /notifications/channels/{id}          获取单个渠道
   PUT     /notifications/channels/{id}          更新渠道
   DELETE  /notifications/channels/{id}          删除渠道
+  POST    /notifications/channels/{id}/test     发送测试通知
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
+from app.core.notifier import send_notification
 from app.crud import notification as crud
 from app.db.session import get_async_session
 from app.models.auth import User
@@ -122,3 +124,36 @@ async def delete_channel(
             status_code=status.HTTP_404_NOT_FOUND, detail="Channel not found")
     await _reload_engine()
     return MessageResponse(message="Channel deleted")
+
+
+@router.post("/channels/{channel_id}/test", response_model=MessageResponse)
+async def test_channel(
+    channel_id: int,
+    _current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_session),
+):
+    """向指定渠道发送一条测试通知."""
+    channel = await crud.get_channel(db, channel_id)
+    if not channel:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Channel not found")
+    provider = await crud.get_provider(db, channel.provider_id)
+    if not provider:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Provider id={channel.provider_id} not found",
+        )
+    channel_dict = {
+        "name": channel.name,
+        "target": channel.target,
+        "provider_type": provider.type,
+        "addition": provider.addition,
+    }
+    try:
+        await send_notification(channel_dict, "这是一条来自 Collei 的测试通知 ✅")
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"通知发送失败: {exc}",
+        ) from exc
+    return MessageResponse(message="测试通知已发送")
