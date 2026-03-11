@@ -45,6 +45,8 @@ class AlertRule(Base):
         Integer, default=60, server_default=text("60"))
     enabled: Mapped[int] = mapped_column(
         Integer, default=0, server_default=text("0"))
+    notify_recovery: Mapped[int] = mapped_column(
+        Integer, default=0, server_default=text("0"))
     created_at: Mapped[int] = mapped_column(Integer, default=_now)
 
     # 关系

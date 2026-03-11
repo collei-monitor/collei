@@ -80,6 +80,7 @@ class AlertRuleCreate(BaseModel):
     threshold: float = Field(..., description="阈值")
     duration: int = Field(60, ge=0, description="持续时间阈值(秒)")
     enabled: int = Field(0, ge=0, le=1)
+    notify_recovery: int = Field(0, ge=0, le=1, description="是否启用恢复通知")
 
 
 class AlertRuleUpdate(BaseModel):
@@ -90,6 +91,7 @@ class AlertRuleUpdate(BaseModel):
     threshold: float | None = None
     duration: int | None = Field(None, ge=0)
     enabled: int | None = Field(None, ge=0, le=1)
+    notify_recovery: int | None = Field(None, ge=0, le=1)
 
 
 class AlertRuleRead(BaseModel):
@@ -100,6 +102,7 @@ class AlertRuleRead(BaseModel):
     threshold: float
     duration: int = 60
     enabled: int = 0
+    notify_recovery: int = 0
     created_at: int | None = None
 
     model_config = {"from_attributes": True}

@@ -127,6 +127,7 @@ class AlertEngine:
                     "condition": r.condition,
                     "threshold": r.threshold,
                     "duration": r.duration,
+                    "notify_recovery": r.notify_recovery,
                 }
                 for r in rows
             }
@@ -270,12 +271,21 @@ class AlertEngine:
             for uuid in server_uuids:
                 key = (uuid, rule_id)
                 state = self._states.get(key)
+                is_new = state is None
                 if state is None:
                     state = _AlertState()
                     self._states[key] = state
 
                 triggered, value = self._evaluate(uuid, rule)
                 state.value = value
+
+                # 新建状态条目且条件已满足时，直接置为
+                # FIRING 但不发送通知，避免对已有状态
+                # （如服务器早已离线）误触发告警风暴
+                if is_new and triggered:
+                    state.status = AlertStatus.FIRING
+                    state.last_notified_at = now
+                    continue
 
                 # ── 状态转换 ────────────────────────────────────
                 if state.status == AlertStatus.OK:
@@ -296,7 +306,9 @@ class AlertEngine:
                     if not triggered:
                         state.status = AlertStatus.OK
                         state.pending_since = 0.0
-                        await self._on_resolved(uuid, rule, value, channel_ids)
+                        if rule.get("notify_recovery", 0) == 1:
+                            await self._on_resolved(
+                                uuid, rule, value, channel_ids)
 
     # ── 事件回调 ────────────────────────────────────────────────────────
 
