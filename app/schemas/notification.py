@@ -163,7 +163,6 @@ class AlertEngineStatus(BaseModel):
     running: bool
     rules_count: int
     mappings_count: int
-    channels_count: int
     states_count: int
     firing_count: int
     pending_count: int

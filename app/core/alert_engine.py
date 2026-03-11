@@ -85,10 +85,9 @@ class AlertEngine:
         # (server_uuid, rule_id) → _AlertState
         self._states: dict[tuple[str, int], _AlertState] = {}
 
-        # 缓存的规则/映射/渠道/分组
+        # 缓存的规则/映射/分组
         self._rules: dict[int, dict[str, Any]] = {}
         self._mappings: dict[int, list[dict[str, Any]]] = {}
-        self._channels: dict[int, dict[str, Any]] = {}
         self._group_servers: dict[str, set[str]] = {}
 
         self._task: asyncio.Task | None = None
@@ -147,24 +146,7 @@ class AlertEngine:
                         "channel_id": m.channel_id,
                     })
 
-            # 3) 渠道 + 提供商配置
-            channels = (await db.execute(select(AlertChannel))).scalars().all()
-            providers = (await db.execute(
-                select(MessageSenderProvider)
-            )).scalars().all()
-            prov_map = {p.id: p for p in providers}
-            self._channels = {
-                c.id: {
-                    "name": c.name,
-                    "provider_id": c.provider_id,
-                    "target": c.target,
-                    "provider_type": prov_map[c.provider_id].type if c.provider_id in prov_map else None,
-                    "addition": prov_map[c.provider_id].addition if c.provider_id in prov_map else None,
-                }
-                for c in channels
-            }
-
-            # 4) 分组 → 服务器
+            # 3) 分组 → 服务器
             self._group_servers.clear()
             links = (await db.execute(select(ServerGroup))).scalars().all()
             for gl in links:
@@ -182,10 +164,9 @@ class AlertEngine:
             del self._states[k]
 
         logger.info(
-            "告警引擎重载: %d 条规则, %d 条映射, %d 个渠道",
+            "告警引擎重载: %d 条规则, %d 条映射",
             len(self._rules),
             sum(len(v) for v in self._mappings.values()),
-            len(self._channels),
         )
 
     # ── 目标解析 ────────────────────────────────────────────────────────
@@ -390,12 +371,27 @@ class AlertEngine:
         )
 
     async def _notify(self, channel_ids: set[int], message: str) -> None:
-        """向指定渠道集合发送通知."""
+        """向指定渠道集合发送通知（实时查库获取最新配置）."""
         from app.core.notifier import send_notification
 
-        for cid in channel_ids:
-            ch = self._channels.get(cid)
-            if ch:
+        async with async_session_factory() as db:
+            for cid in channel_ids:
+                row = (await db.execute(
+                    select(AlertChannel).where(AlertChannel.id == cid)
+                )).scalar_one_or_none()
+                if not row:
+                    continue
+                prov = (await db.execute(
+                    select(MessageSenderProvider).where(
+                        MessageSenderProvider.id == row.provider_id
+                    )
+                )).scalar_one_or_none()
+                ch = {
+                    "name": row.name,
+                    "target": row.target,
+                    "provider_type": prov.type if prov else None,
+                    "addition": prov.addition if prov else None,
+                }
                 await send_notification(ch, message)
 
     # ── 前端查询接口 ──────────────────────────────────────────────────
@@ -414,7 +410,6 @@ class AlertEngine:
             "running": self._task is not None and not self._task.done(),
             "rules_count": len(self._rules),
             "mappings_count": sum(len(v) for v in self._mappings.values()),
-            "channels_count": len(self._channels),
             "states_count": len(self._states),
             "firing_count": firing,
             "pending_count": pending,

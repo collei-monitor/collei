@@ -71,6 +71,5 @@ async def reload_engine(
     status = alert_engine.get_status()
     return MessageResponse(
         message=f"Reloaded: {status['rules_count']} rules, "
-                f"{status['mappings_count']} mappings, "
-                f"{status['channels_count']} channels",
+                f"{status['mappings_count']} mappings",
     )
