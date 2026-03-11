@@ -3,9 +3,9 @@
 端点:
   POST    /notifications/providers              创建消息提供商
   GET     /notifications/providers              获取所有提供商
-  GET     /notifications/providers/{name}       获取单个提供商
-  PUT     /notifications/providers/{name}       更新提供商
-  DELETE  /notifications/providers/{name}       删除提供商
+  GET     /notifications/providers/{id}         获取单个提供商
+  PUT     /notifications/providers/{id}         更新提供商
+  DELETE  /notifications/providers/{id}         删除提供商
 """
 
 from __future__ import annotations
@@ -43,13 +43,8 @@ async def create_provider(
     db: AsyncSession = Depends(get_async_session),
 ):
     """创建消息发送提供商."""
-    existing = await crud.get_provider(db, body.name)
-    if existing:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Provider already exists",
-        )
-    result = await crud.create_provider(db, name=body.name, addition=body.addition)
+    result = await crud.create_provider(
+        db, name=body.name, type=body.type, addition=body.addition)
     await _reload_engine()
     return result
 
@@ -63,29 +58,29 @@ async def list_providers(
     return await crud.get_all_providers(db)
 
 
-@router.get("/providers/{name}", response_model=ProviderRead)
+@router.get("/providers/{provider_id}", response_model=ProviderRead)
 async def get_provider(
-    name: str,
+    provider_id: int,
     _current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_session),
 ):
     """获取单个消息发送提供商."""
-    provider = await crud.get_provider(db, name)
+    provider = await crud.get_provider(db, provider_id)
     if not provider:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Provider not found")
     return provider
 
 
-@router.put("/providers/{name}", response_model=ProviderRead)
+@router.put("/providers/{provider_id}", response_model=ProviderRead)
 async def update_provider(
-    name: str,
+    provider_id: int,
     body: ProviderUpdate,
     _current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_session),
 ):
     """更新消息发送提供商."""
-    provider = await crud.get_provider(db, name)
+    provider = await crud.get_provider(db, provider_id)
     if not provider:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Provider not found")
@@ -95,19 +90,19 @@ async def update_provider(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No fields to update",
         )
-    result = await crud.update_provider(db, name, **data)
+    result = await crud.update_provider(db, provider_id, **data)
     await _reload_engine()
     return result
 
 
-@router.delete("/providers/{name}", response_model=MessageResponse)
+@router.delete("/providers/{provider_id}", response_model=MessageResponse)
 async def delete_provider(
-    name: str,
+    provider_id: int,
     _current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_session),
 ):
     """删除消息发送提供商（级联删除关联的渠道）."""
-    deleted = await crud.delete_provider(db, name)
+    deleted = await crud.delete_provider(db, provider_id)
     if not deleted:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Provider not found")

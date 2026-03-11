@@ -43,14 +43,14 @@ async def create_channel(
     db: AsyncSession = Depends(get_async_session),
 ):
     """创建通知渠道."""
-    provider = await crud.get_provider(db, body.provider_name)
+    provider = await crud.get_provider(db, body.provider_id)
     if not provider:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Provider '{body.provider_name}' not found",
+            detail=f"Provider id={body.provider_id} not found",
         )
     result = await crud.create_channel(
-        db, name=body.name, provider_name=body.provider_name, target=body.target,
+        db, name=body.name, provider_id=body.provider_id, target=body.target,
     )
     await _reload_engine()
     return result
@@ -97,12 +97,12 @@ async def update_channel(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No fields to update",
         )
-    if "provider_name" in data:
-        provider = await crud.get_provider(db, data["provider_name"])
+    if "provider_id" in data:
+        provider = await crud.get_provider(db, data["provider_id"])
         if not provider:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Provider '{data['provider_name']}' not found",
+                detail=f"Provider id={data['provider_id']} not found",
             )
     result = await crud.update_channel(db, channel_id, **data)
     await _reload_engine()

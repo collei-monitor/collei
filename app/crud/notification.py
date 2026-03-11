@@ -20,9 +20,9 @@ from app.models.notification import (
 # Message Sender Provider
 # ═══════════════════════════════════════════════════════════════════════════════
 
-async def get_provider(db: AsyncSession, name: str) -> MessageSenderProvider | None:
+async def get_provider(db: AsyncSession, provider_id: int) -> MessageSenderProvider | None:
     result = await db.execute(
-        select(MessageSenderProvider).where(MessageSenderProvider.name == name))
+        select(MessageSenderProvider).where(MessageSenderProvider.id == provider_id))
     return result.scalar_one_or_none()
 
 
@@ -32,29 +32,30 @@ async def get_all_providers(db: AsyncSession) -> Sequence[MessageSenderProvider]
 
 
 async def create_provider(
-    db: AsyncSession, *, name: str, addition: str | None = None,
+    db: AsyncSession, *, name: str | None = None,
+    type: str | None = None, addition: str | None = None,
 ) -> MessageSenderProvider:
-    provider = MessageSenderProvider(name=name, addition=addition)
+    provider = MessageSenderProvider(name=name, type=type, addition=addition)
     db.add(provider)
     await db.flush()
     return provider
 
 
 async def update_provider(
-    db: AsyncSession, name: str, **kwargs,
+    db: AsyncSession, provider_id: int, **kwargs,
 ) -> MessageSenderProvider | None:
     await db.execute(
         update(MessageSenderProvider)
-        .where(MessageSenderProvider.name == name)
+        .where(MessageSenderProvider.id == provider_id)
         .values(**kwargs)
     )
     await db.flush()
-    return await get_provider(db, name)
+    return await get_provider(db, provider_id)
 
 
-async def delete_provider(db: AsyncSession, name: str) -> bool:
+async def delete_provider(db: AsyncSession, provider_id: int) -> bool:
     result = await db.execute(
-        delete(MessageSenderProvider).where(MessageSenderProvider.name == name))
+        delete(MessageSenderProvider).where(MessageSenderProvider.id == provider_id))
     return (result.rowcount or 0) > 0
 
 
@@ -77,11 +78,11 @@ async def create_channel(
     db: AsyncSession,
     *,
     name: str,
-    provider_name: str,
+    provider_id: int,
     target: str | None = None,
 ) -> AlertChannel:
     channel = AlertChannel(
-        name=name, provider_name=provider_name, target=target)
+        name=name, provider_id=provider_id, target=target)
     db.add(channel)
     await db.flush()
     return channel

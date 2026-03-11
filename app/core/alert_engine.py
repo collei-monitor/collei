@@ -152,13 +152,14 @@ class AlertEngine:
             providers = (await db.execute(
                 select(MessageSenderProvider)
             )).scalars().all()
-            prov_map = {p.name: p.addition for p in providers}
+            prov_map = {p.id: p for p in providers}
             self._channels = {
                 c.id: {
                     "name": c.name,
-                    "provider_name": c.provider_name,
+                    "provider_id": c.provider_id,
                     "target": c.target,
-                    "addition": prov_map.get(c.provider_name),
+                    "provider_type": prov_map[c.provider_id].type if c.provider_id in prov_map else None,
+                    "addition": prov_map[c.provider_id].addition if c.provider_id in prov_map else None,
                 }
                 for c in channels
             }

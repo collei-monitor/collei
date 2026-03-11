@@ -65,7 +65,10 @@ class MessageSenderProvider(Base):
 
     __tablename__ = "message_sender_providers"
 
-    name: Mapped[str] = mapped_column(String, primary_key=True)
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str | None] = mapped_column(String)
+    type: Mapped[str | None] = mapped_column(String)
     addition: Mapped[str | None] = mapped_column(Text)
 
     channels: Mapped[list["AlertChannel"]] = relationship(
@@ -84,9 +87,9 @@ class AlertChannel(Base):
     id: Mapped[int] = mapped_column(
         Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
-    provider_name: Mapped[str] = mapped_column(
-        String,
-        ForeignKey("message_sender_providers.name", ondelete="CASCADE"),
+    provider_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("message_sender_providers.id", ondelete="CASCADE"),
     )
     target: Mapped[str | None] = mapped_column(String)
 

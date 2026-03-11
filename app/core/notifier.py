@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 async def send_notification(channel: dict[str, Any], message: str) -> None:
     """根据渠道配置发送通知."""
-    provider_name = (channel.get("provider_name") or "").lower()
+    provider_type = (channel.get("provider_type") or "").lower()
     addition_raw = channel.get("addition")
     target = channel.get("target")
 
@@ -32,14 +32,14 @@ async def send_notification(channel: dict[str, Any], message: str) -> None:
             return
 
     try:
-        if "telegram" in provider_name:
+        if "telegram" in provider_type:
             await _send_telegram(addition, target, message)
-        elif "webhook" in provider_name:
+        elif "webhook" in provider_type:
             await _send_webhook(addition, target, message)
-        elif "smtp" in provider_name or "email" in provider_name:
+        elif "smtp" in provider_type or "email" in provider_type:
             await _send_email(addition, target, message)
         else:
-            logger.warning("不支持的通知提供商: %s", provider_name)
+            logger.warning("不支持的通知提供商: %s", provider_type)
     except Exception:
         logger.exception("通知发送失败 [%s]", channel.get("name"))
 

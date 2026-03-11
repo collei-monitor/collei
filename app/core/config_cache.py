@@ -19,7 +19,6 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-
 class ConfigCache:
     """内存配置缓存（asyncio 单事件循环下线程安全）."""
 

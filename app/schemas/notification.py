@@ -19,17 +19,22 @@ class MessageResponse(BaseModel):
 
 class ProviderCreate(BaseModel):
     """创建消息发送提供商."""
-    name: str = Field(..., min_length=1, max_length=64)
+    name: str | None = Field(None, max_length=64)
+    type: str | None = Field(None, max_length=64)
     addition: str | None = None
 
 
 class ProviderUpdate(BaseModel):
     """更新消息发送提供商."""
+    name: str | None = Field(None, max_length=64)
+    type: str | None = Field(None, max_length=64)
     addition: str | None = None
 
 
 class ProviderRead(BaseModel):
-    name: str
+    id: int
+    name: str | None = None
+    type: str | None = None
     addition: str | None = None
 
     model_config = {"from_attributes": True}
@@ -42,21 +47,21 @@ class ProviderRead(BaseModel):
 class AlertChannelCreate(BaseModel):
     """创建通知渠道."""
     name: str = Field(..., min_length=1, max_length=128)
-    provider_name: str = Field(..., min_length=1)
+    provider_id: int
     target: str | None = None
 
 
 class AlertChannelUpdate(BaseModel):
     """更新通知渠道."""
     name: str | None = Field(None, min_length=1, max_length=128)
-    provider_name: str | None = Field(None, min_length=1)
+    provider_id: int | None = None
     target: str | None = None
 
 
 class AlertChannelRead(BaseModel):
     id: int
     name: str
-    provider_name: str
+    provider_id: int
     target: str | None = None
 
     model_config = {"from_attributes": True}
