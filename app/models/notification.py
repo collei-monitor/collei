@@ -120,6 +120,7 @@ class AlertRuleMapping(Base):
     channel_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("alert_channels.id", ondelete="CASCADE"),
+        primary_key=True,
     )
 
     rule: Mapped["AlertRule"] = relationship(

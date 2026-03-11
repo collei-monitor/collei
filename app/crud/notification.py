@@ -181,12 +181,14 @@ async def delete_rule_mapping(
     rule_id: int,
     target_type: str,
     target_id: str,
+    channel_id: int,
 ) -> bool:
     result = await db.execute(
         delete(AlertRuleMapping).where(
             AlertRuleMapping.rule_id == rule_id,
             AlertRuleMapping.target_type == target_type,
             AlertRuleMapping.target_id == target_id,
+            AlertRuleMapping.channel_id == channel_id,
         )
     )
     return (result.rowcount or 0) > 0

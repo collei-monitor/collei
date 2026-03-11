@@ -180,12 +180,14 @@ async def delete_rule_mapping(
     rule_id: int,
     target_type: str = Query(..., description="server / group / global"),
     target_id: str = Query(..., description="server_uuid / group_id"),
+    channel_id: int = Query(..., description="channel id"),
     _current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_session),
 ):
     """删除告警规则的单条映射."""
     deleted = await crud.delete_rule_mapping(
         db, rule_id=rule_id, target_type=target_type, target_id=target_id,
+        channel_id=channel_id,
     )
     if not deleted:
         raise HTTPException(
