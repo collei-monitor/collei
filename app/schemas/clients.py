@@ -129,11 +129,10 @@ class ServerFullDetail(BaseModel):
 
 
 class ServerCreateResponse(BaseModel):
-    """被动注册成功后的响应（含 token & install 命令）."""
+    """被动注册成功后的响应."""
     uuid: str
     name: str
     token: str
-    install_hint: str
 
 
 class ServerPublicBrief(BaseModel):
