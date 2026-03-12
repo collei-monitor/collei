@@ -89,6 +89,45 @@ class ServerBrief(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ServerFullDetail(BaseModel):
+    """服务器完整详情 — 列表展示用，包含所有服务器信息 + 状态 + 分组，不含 token."""
+    # 基础配置信息
+    uuid: str
+    name: str
+    cpu_name: str | None = None
+    virtualization: str | None = None
+    arch: str | None = None
+    cpu_cores: int | None = None
+    os: str | None = None
+    kernel_version: str | None = None
+    ipv4: str | None = None
+    ipv6: str | None = None
+    region: str | None = None
+    mem_total: int | None = None
+    swap_total: int | None = None
+    disk_total: int | None = None
+    version: str | None = None
+    remark: str | None = None
+    top: int = 0
+    hidden: int = 0
+    is_approved: int = 0
+    enable_statistics_mode: int = 0
+    created_at: int | None = None
+
+    # 服务器运行状态
+    status: int = 0
+    last_online: int | None = None
+    boot_time: int | None = None
+    current_run_id: str | None = None
+    total_flow_out: int | None = None
+    total_flow_in: int | None = None
+
+    # 所属分组
+    groups: list[GroupRead] = []
+
+    model_config = {"from_attributes": True}
+
+
 class ServerCreateResponse(BaseModel):
     """被动注册成功后的响应（含 token & install 命令）."""
     uuid: str

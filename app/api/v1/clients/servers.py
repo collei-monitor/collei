@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
-from app.api.v1.clients._helpers import build_server_brief
+from app.api.v1.clients._helpers import build_server_brief, build_server_full_detail
 from app.core.server_cache import server_cache
 from app.crud import clients as crud
 from app.db.session import get_async_session
@@ -30,6 +30,7 @@ from app.schemas.clients import (
     ServerBrief,
     ServerCreate,
     ServerCreateResponse,
+    ServerFullDetail,
     ServerGroupSet,
     ServerRead,
     ServerTopUpdate,
@@ -64,19 +65,19 @@ async def create_server(
     )
 
 
-@router.get("/servers", response_model=list[ServerBrief])
+@router.get("/servers", response_model=list[ServerFullDetail])
 async def list_servers(
     _current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_session),
 ):
-    """获取所有服务器列表（含状态 & 分组）."""
+    """获取所有服务器列表（包含完整详情 + 状态 + 分组）."""
     servers = await crud.get_all_servers(db)
     statuses = {s.uuid: s for s in await crud.get_all_server_statuses(db)}
     result = []
     for srv in servers:
         groups = await crud.get_server_groups(db, srv.uuid)
         st = statuses.get(srv.uuid)
-        result.append(build_server_brief(srv, st, groups))
+        result.append(build_server_full_detail(srv, st, groups))
     return result
 
 
