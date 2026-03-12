@@ -28,7 +28,7 @@ async def websocket_endpoint(
     """
     authenticated = bool(token and decode_ws_token(token))
 
-    await ws_manager.connect(ws)
+    await ws_manager.connect(ws, authenticated=authenticated)
     try:
         # 连接成功后立即推送服务器快照
         await ws.send_json(server_cache.build_snapshot(include_hidden=authenticated))

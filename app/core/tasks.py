@@ -106,8 +106,9 @@ class BackgroundTasks:
         while True:
             try:
                 if ws_manager.has_connections:
-                    snapshot = server_cache.build_snapshot()
-                    await ws_manager.broadcast(snapshot)
+                    public_snapshot = server_cache.build_snapshot(include_hidden=False)
+                    full_snapshot = server_cache.build_snapshot(include_hidden=True)
+                    await ws_manager.broadcast(public_snapshot, full_snapshot)
 
             except Exception as e:
                 print(f"⚠️ 广播快照出错: {e}")

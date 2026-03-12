@@ -15,7 +15,8 @@ class WSManager:
     """WebSocket 连接管理器 — 管理面板用户的实时连接."""
 
     def __init__(self) -> None:
-        self._connections: set[WebSocket] = set()
+        # WebSocket → authenticated（是否可见隐藏服务器）
+        self._connections: dict[WebSocket, bool] = {}
         self._lock = asyncio.Lock()
 
     @property
@@ -27,20 +28,22 @@ class WSManager:
     def connection_count(self) -> int:
         return len(self._connections)
 
-    async def connect(self, ws: WebSocket) -> None:
+    async def connect(self, ws: WebSocket, *, authenticated: bool = False) -> None:
         """接受并注册一个 WebSocket 连接."""
         await ws.accept()
         async with self._lock:
-            self._connections.add(ws)
+            self._connections[ws] = authenticated
 
     async def disconnect(self, ws: WebSocket) -> None:
         """移除一个已断开的连接."""
         async with self._lock:
-            self._connections.discard(ws)
+            self._connections.pop(ws, None)
 
-    async def broadcast(self, data: dict[str, Any]) -> None:
-        """向所有连接广播 JSON 数据.
+    async def broadcast(self, public_data: dict[str, Any], full_data: dict[str, Any]) -> None:
+        """向所有连接广播快照.
 
+        - 已认证连接接收 full_data（含隐藏服务器）
+        - 未认证连接接收 public_data（仅非隐藏服务器）
         自动清理发送失败（已断开）的连接。
         """
         if not self._connections:
@@ -48,21 +51,21 @@ class WSManager:
 
         dead: list[WebSocket] = []
 
-        async def _send(ws: WebSocket) -> None:
+        async def _send(ws: WebSocket, authenticated: bool) -> None:
             try:
-                await ws.send_json(data)
+                await ws.send_json(full_data if authenticated else public_data)
             except Exception:
                 dead.append(ws)
 
         await asyncio.gather(
-            *(_send(ws) for ws in self._connections),
+            *(_send(ws, auth) for ws, auth in self._connections.items()),
             return_exceptions=True,
         )
 
         if dead:
             async with self._lock:
                 for ws in dead:
-                    self._connections.discard(ws)
+                    self._connections.pop(ws, None)
 
 
 # 全局单例
