@@ -18,22 +18,20 @@ router = APIRouter(tags=["websocket"])
 @router.websocket("/ws")
 async def websocket_endpoint(
     ws: WebSocket,
-    token: str = Query(..., description="由 GET /auth/me 返回的 ws_token"),
+    token: str | None = Query(None, description="由 GET /auth/me 返回的 ws_token"),
 ):
     """面板 WebSocket 连接.
 
     前端通过 URL query param 传入 ws_token（由 GET /auth/me 颁发，60 秒有效）。
-    认证通过后立即推送全量服务器快照，后续持续接收广播更新。
+    - 认证成功：推送全部在线服务器（含隐藏）。
+    - 认证失败 / 未提供 token：推送在线的非隐藏服务器。
     """
-    user_uuid = decode_ws_token(token)
-    if not user_uuid:
-        await ws.close(code=1008)  # Policy Violation — token 无效或已过期
-        return
+    authenticated = bool(token and decode_ws_token(token))
 
     await ws_manager.connect(ws)
     try:
-        # 连接成功后立即推送全量服务器快照
-        await ws.send_json(server_cache.build_snapshot())
+        # 连接成功后立即推送服务器快照
+        await ws.send_json(server_cache.build_snapshot(include_hidden=authenticated))
 
         # 保持连接存活，接收客户端消息（心跳保活）
         while True:

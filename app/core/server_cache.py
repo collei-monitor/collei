@@ -204,8 +204,12 @@ class ServerCache:
     # 广播快照
     # ─────────────────────────────────────────────────────────────────────
 
-    def build_snapshot(self) -> dict[str, Any]:
-        """从缓存构建完整的服务器状态快照（仅在线 + 已批准 + 未隐藏）."""
+    def build_snapshot(self, *, include_hidden: bool = False) -> dict[str, Any]:
+        """从缓存构建服务器状态快照（仅在线 + 已批准）.
+
+        Args:
+            include_hidden: 是否包含隐藏服务器（管理员视角）。
+        """
         now = int(time.time())
         servers_data: list[dict[str, Any]] = []
 
@@ -218,8 +222,9 @@ class ServerCache:
 
         for srv in sorted_servers:
             uuid = srv["uuid"]
-            # 仅已批准且未隐藏
-            if srv.get("is_approved") != 1 or srv.get("hidden", 0) != 0:
+            if srv.get("is_approved") != 1:
+                continue
+            if not include_hidden and srv.get("hidden", 0) != 0:
                 continue
 
             st = self._statuses.get(uuid)
