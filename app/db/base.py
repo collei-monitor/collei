@@ -31,7 +31,8 @@ from app.models.notification import (  # noqa: F401
     AlertChannel,
     AlertHistory,
     AlertRule,
-    AlertRuleMapping,
+    AlertRuleChannelLink,
+    AlertRuleTarget,
     Log,
     MessageSenderProvider,
 )

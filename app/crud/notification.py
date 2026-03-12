@@ -11,7 +11,8 @@ from app.models.notification import (
     AlertChannel,
     AlertHistory,
     AlertRule,
-    AlertRuleMapping,
+    AlertRuleChannelLink,
+    AlertRuleTarget,
     MessageSenderProvider,
 )
 
@@ -145,96 +146,109 @@ async def delete_rule(db: AsyncSession, rule_id: int) -> bool:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Alert Rule Mapping
+# Alert Rule Targets (规则目标绑定)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-async def get_rule_mappings(
+async def get_rule_targets(
     db: AsyncSession, rule_id: int,
-) -> Sequence[AlertRuleMapping]:
+) -> Sequence[AlertRuleTarget]:
     result = await db.execute(
-        select(AlertRuleMapping).where(AlertRuleMapping.rule_id == rule_id))
+        select(AlertRuleTarget).where(AlertRuleTarget.rule_id == rule_id))
     return result.scalars().all()
 
 
-async def create_rule_mapping(
+async def add_rule_targets(
     db: AsyncSession,
     *,
     rule_id: int,
-    target_type: str,
-    target_id: str,
-    channel_id: int,
-) -> AlertRuleMapping:
-    mapping = AlertRuleMapping(
-        rule_id=rule_id,
-        target_type=target_type,
-        target_id=target_id,
-        channel_id=channel_id,
-    )
-    db.add(mapping)
-    await db.flush()
-    return mapping
+    targets: list[dict],
+) -> tuple[list[AlertRuleTarget], list[dict]]:
+    """增量添加规则的目标绑定，跳过已存在的条目，返回 (created, skipped)."""
+    existing = await db.execute(
+        select(AlertRuleTarget).where(AlertRuleTarget.rule_id == rule_id))
+    existing_keys = {
+        (t.target_type, t.target_id) for t in existing.scalars().all()
+    }
 
-
-async def create_rule_mappings_batch(
-    db: AsyncSession,
-    *,
-    rule_id: int,
-    target_type: str,
-    target_ids: list[str],
-    channel_id: int,
-) -> tuple[list[AlertRuleMapping], list[str]]:
-    """批量创建告警规则映射，跳过已存在的条目，返回 (created, skipped)."""
-    existing_result = await db.execute(
-        select(AlertRuleMapping).where(
-            AlertRuleMapping.rule_id == rule_id,
-            AlertRuleMapping.target_type == target_type,
-            AlertRuleMapping.channel_id == channel_id,
-        )
-    )
-    existing_ids = {m.target_id for m in existing_result.scalars().all()}
-
-    to_create = [tid for tid in target_ids if tid not in existing_ids]
-    skipped = [tid for tid in target_ids if tid in existing_ids]
-
-    mappings = [
-        AlertRuleMapping(
+    created: list[AlertRuleTarget] = []
+    skipped: list[dict] = []
+    for t in targets:
+        key = (t["target_type"], t["target_id"])
+        if key in existing_keys:
+            skipped.append(t)
+            continue
+        obj = AlertRuleTarget(
             rule_id=rule_id,
-            target_type=target_type,
-            target_id=tid,
-            channel_id=channel_id,
+            target_type=t["target_type"],
+            target_id=t["target_id"],
+            is_exclude=t.get("is_exclude", 0),
         )
-        for tid in to_create
-    ]
-    if mappings:
-        db.add_all(mappings)
+        db.add(obj)
+        created.append(obj)
+        existing_keys.add(key)
+
+    if created:
         await db.flush()
-    return mappings, skipped
+    return created, skipped
 
 
-async def delete_rule_mapping(
+async def delete_rule_targets_batch(
     db: AsyncSession,
     *,
     rule_id: int,
-    target_type: str,
-    target_id: str,
-    channel_id: int,
-) -> bool:
-    result = await db.execute(
-        delete(AlertRuleMapping).where(
-            AlertRuleMapping.rule_id == rule_id,
-            AlertRuleMapping.target_type == target_type,
-            AlertRuleMapping.target_id == target_id,
-            AlertRuleMapping.channel_id == channel_id,
+    items: list[dict],
+) -> int:
+    """批量删除规则的指定目标绑定."""
+    count = 0
+    for item in items:
+        result = await db.execute(
+            delete(AlertRuleTarget).where(
+                AlertRuleTarget.rule_id == rule_id,
+                AlertRuleTarget.target_type == item["target_type"],
+                AlertRuleTarget.target_id == item["target_id"],
+            )
         )
-    )
-    return (result.rowcount or 0) > 0
+        count += result.rowcount or 0
+    return count
 
 
-async def delete_all_rule_mappings(db: AsyncSession, rule_id: int) -> int:
-    """删除某规则的所有映射."""
+async def delete_all_rule_targets(db: AsyncSession, rule_id: int) -> int:
     result = await db.execute(
-        delete(AlertRuleMapping).where(AlertRuleMapping.rule_id == rule_id))
+        delete(AlertRuleTarget).where(AlertRuleTarget.rule_id == rule_id))
     return result.rowcount or 0
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Alert Rule Channels (规则渠道绑定)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def get_rule_channels(
+    db: AsyncSession, rule_id: int,
+) -> Sequence[AlertRuleChannelLink]:
+    result = await db.execute(
+        select(AlertRuleChannelLink).where(
+            AlertRuleChannelLink.rule_id == rule_id))
+    return result.scalars().all()
+
+
+async def set_rule_channels(
+    db: AsyncSession,
+    *,
+    rule_id: int,
+    channel_ids: list[int],
+) -> list[AlertRuleChannelLink]:
+    """完全替换规则绑定的通知渠道（先删后增）."""
+    await db.execute(
+        delete(AlertRuleChannelLink).where(
+            AlertRuleChannelLink.rule_id == rule_id))
+    objs = [
+        AlertRuleChannelLink(rule_id=rule_id, channel_id=cid)
+        for cid in channel_ids
+    ]
+    if objs:
+        db.add_all(objs)
+        await db.flush()
+    return objs
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

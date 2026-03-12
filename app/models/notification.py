@@ -50,8 +50,12 @@ class AlertRule(Base):
     created_at: Mapped[int] = mapped_column(Integer, default=_now)
 
     # 关系
-    mappings: Mapped[list["AlertRuleMapping"]] = relationship(
-        "AlertRuleMapping", back_populates="rule",
+    targets: Mapped[list["AlertRuleTarget"]] = relationship(
+        "AlertRuleTarget", back_populates="rule",
+        cascade="all, delete-orphan",
+    )
+    channels: Mapped[list["AlertRuleChannelLink"]] = relationship(
+        "AlertRuleChannelLink", back_populates="rule",
         cascade="all, delete-orphan",
     )
     history: Mapped[list["AlertHistory"]] = relationship(
@@ -97,18 +101,18 @@ class AlertChannel(Base):
 
     provider: Mapped["MessageSenderProvider"] = relationship(
         "MessageSenderProvider", back_populates="channels")
-    mappings: Mapped[list["AlertRuleMapping"]] = relationship(
-        "AlertRuleMapping", back_populates="channel",
+    rule_channels: Mapped[list["AlertRuleChannelLink"]] = relationship(
+        "AlertRuleChannelLink", back_populates="channel",
         cascade="all, delete-orphan",
     )
 
 
-# ─── Alert Rule Mapping ──────────────────────────────────────────────────────
+# ─── Alert Rule Targets (规则目标绑定表) ──────────────────────────────────────
 
-class AlertRuleMapping(Base):
-    """告警规则与服务器/分组的映射关系."""
+class AlertRuleTarget(Base):
+    """告警规则与服务器/分组的绑定关系."""
 
-    __tablename__ = "alert_rule_mapping"
+    __tablename__ = "alert_rule_targets"
 
     rule_id: Mapped[int] = mapped_column(
         Integer,
@@ -117,6 +121,25 @@ class AlertRuleMapping(Base):
     )
     target_type: Mapped[str] = mapped_column(String, primary_key=True)
     target_id: Mapped[str] = mapped_column(String, primary_key=True)
+    is_exclude: Mapped[int] = mapped_column(
+        Integer, default=0, server_default=text("0"))
+
+    rule: Mapped["AlertRule"] = relationship(
+        "AlertRule", back_populates="targets")
+
+
+# ─── Alert Rule Channels (规则渠道绑定表) ─────────────────────────────────────
+
+class AlertRuleChannelLink(Base):
+    """告警规则与通知渠道的绑定关系."""
+
+    __tablename__ = "alert_rule_channels"
+
+    rule_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("alert_rules.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
     channel_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("alert_channels.id", ondelete="CASCADE"),
@@ -124,9 +147,9 @@ class AlertRuleMapping(Base):
     )
 
     rule: Mapped["AlertRule"] = relationship(
-        "AlertRule", back_populates="mappings")
+        "AlertRule", back_populates="channels")
     channel: Mapped["AlertChannel"] = relationship(
-        "AlertChannel", back_populates="mappings")
+        "AlertChannel", back_populates="rule_channels")
 
 
 # ─── Alert History ────────────────────────────────────────────────────────────

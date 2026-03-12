@@ -29,7 +29,8 @@ from app.models.notification import (
     AlertChannel,
     AlertHistory,
     AlertRule,
-    AlertRuleMapping,
+    AlertRuleChannelLink,
+    AlertRuleTarget,
     MessageSenderProvider,
 )
 
@@ -85,9 +86,10 @@ class AlertEngine:
         # (server_uuid, rule_id) → _AlertState
         self._states: dict[tuple[str, int], _AlertState] = {}
 
-        # 缓存的规则/映射/分组
+        # 缓存的规则/目标/渠道/分组
         self._rules: dict[int, dict[str, Any]] = {}
-        self._mappings: dict[int, list[dict[str, Any]]] = {}
+        self._targets: dict[int, list[dict[str, Any]]] = {}
+        self._channels: dict[int, set[int]] = {}
         self._group_servers: dict[str, set[str]] = {}
 
         self._task: asyncio.Task | None = None
@@ -132,22 +134,34 @@ class AlertEngine:
                 for r in rows
             }
 
-            # 2) 映射
-            self._mappings.clear()
+            # 2) 目标绑定
+            self._targets.clear()
+            self._channels.clear()
             if self._rules:
-                maps = (await db.execute(
-                    select(AlertRuleMapping).where(
-                        AlertRuleMapping.rule_id.in_(self._rules.keys())
+                rule_ids = list(self._rules.keys())
+                targets = (await db.execute(
+                    select(AlertRuleTarget).where(
+                        AlertRuleTarget.rule_id.in_(rule_ids)
                     )
                 )).scalars().all()
-                for m in maps:
-                    self._mappings.setdefault(m.rule_id, []).append({
-                        "target_type": m.target_type,
-                        "target_id": m.target_id,
-                        "channel_id": m.channel_id,
+                for t in targets:
+                    self._targets.setdefault(t.rule_id, []).append({
+                        "target_type": t.target_type,
+                        "target_id": t.target_id,
+                        "is_exclude": t.is_exclude,
                     })
 
-            # 3) 分组 → 服务器
+                # 3) 渠道绑定
+                ch_links = (await db.execute(
+                    select(AlertRuleChannelLink).where(
+                        AlertRuleChannelLink.rule_id.in_(rule_ids)
+                    )
+                )).scalars().all()
+                for cl in ch_links:
+                    self._channels.setdefault(cl.rule_id, set()).add(
+                        cl.channel_id)
+
+            # 4) 分组 → 服务器
             self._group_servers.clear()
             links = (await db.execute(select(ServerGroup))).scalars().all()
             for gl in links:
@@ -165,35 +179,44 @@ class AlertEngine:
             del self._states[k]
 
         logger.info(
-            "告警引擎重载: %d 条规则, %d 条映射",
+            "告警引擎重载: %d 条规则, %d 条目标绑定, %d 条渠道绑定",
             len(self._rules),
-            sum(len(v) for v in self._mappings.values()),
+            sum(len(v) for v in self._targets.values()),
+            sum(len(v) for v in self._channels.values()),
         )
 
     # ── 目标解析 ────────────────────────────────────────────────────────
 
     def _resolve_servers(self, rule_id: int) -> set[str]:
-        """将规则映射的 target_type/target_id 解析为具体的 server_uuid 集合."""
-        mappings = self._mappings.get(rule_id, [])
+        """将规则目标绑定解析为具体的 server_uuid 集合（支持排除模式）."""
+        target_list = self._targets.get(rule_id, [])
         servers: set[str] = set()
+        excludes: set[str] = set()
         all_uuids = set(server_cache._servers)
 
-        for m in mappings:
-            tt, tid = m["target_type"], m["target_id"]
+        for t in target_list:
+            tt, tid = t["target_type"], t["target_id"]
+            is_exclude = t.get("is_exclude", 0)
+            resolved: set[str] = set()
+
             if tt == "global":
-                servers.update(all_uuids)
+                resolved = set(all_uuids)
             elif tt == "server":
                 if tid in all_uuids:
-                    servers.add(tid)
+                    resolved = {tid}
             elif tt == "group":
-                servers.update(
-                    self._group_servers.get(tid, set()) & all_uuids
-                )
-        return servers
+                resolved = self._group_servers.get(tid, set()) & all_uuids
+
+            if is_exclude:
+                excludes.update(resolved)
+            else:
+                servers.update(resolved)
+
+        return servers - excludes
 
     def _channel_ids_for_rule(self, rule_id: int) -> set[int]:
         """获取某规则关联的所有渠道 ID."""
-        return {m["channel_id"] for m in self._mappings.get(rule_id, [])}
+        return set(self._channels.get(rule_id, set()))
 
     # ── 指标评估 ────────────────────────────────────────────────────────
 
@@ -421,7 +444,7 @@ class AlertEngine:
         return {
             "running": self._task is not None and not self._task.done(),
             "rules_count": len(self._rules),
-            "mappings_count": sum(len(v) for v in self._mappings.values()),
+            "mappings_count": sum(len(v) for v in self._targets.values()),
             "states_count": len(self._states),
             "firing_count": firing,
             "pending_count": pending,

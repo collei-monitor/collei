@@ -109,35 +109,45 @@ class AlertRuleRead(BaseModel):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Alert Rule Mapping
+# Alert Rule Targets (规则目标绑定)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-class AlertRuleMappingCreate(BaseModel):
-    """创建告警规则映射."""
+class AlertRuleTargetItem(BaseModel):
+    """单条目标绑定."""
     target_type: str = Field(..., description="server / group / global")
-    target_id: str = Field(..., min_length=1)
-    channel_id: int
+    target_id: str = Field(..., min_length=1, description="UUID / group_id / 'all'")
+    is_exclude: int = Field(0, ge=0, le=1, description="0=生效, 1=排除")
 
 
-class AlertRuleMappingBatchCreate(BaseModel):
-    """批量创建告警规则映射（同一 target_type 和 channel，多个 target_id）."""
-    target_type: str = Field(..., description="server / group / global")
-    target_ids: list[str] = Field(..., min_length=1, description="服务器 UUID 或组 ID 列表")
-    channel_id: int
+class AlertRuleTargetBatchRequest(BaseModel):
+    """批量添加或删除规则的目标绑定."""
+    targets: list[AlertRuleTargetItem] = Field(
+        ..., min_length=1, description="目标绑定列表")
 
 
-class AlertRuleMappingRead(BaseModel):
+class AlertRuleTargetRead(BaseModel):
     rule_id: int
     target_type: str
     target_id: str
-    channel_id: int
+    is_exclude: int = 0
 
     model_config = {"from_attributes": True}
 
 
-class AlertRuleMappingBatchRead(BaseModel):
-    created: list[AlertRuleMappingRead]
-    skipped: list[str] = Field(default_factory=list, description="已存在、被跳过的 target_id")
+# ═══════════════════════════════════════════════════════════════════════════════
+# Alert Rule Channels (规则渠道绑定)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class AlertRuleChannelSetRequest(BaseModel):
+    """完全替换规则绑定的通知渠道列表."""
+    channel_ids: list[int] = Field(..., description="通知渠道 ID 列表")
+
+
+class AlertRuleChannelRead(BaseModel):
+    rule_id: int
+    channel_id: int
+
+    model_config = {"from_attributes": True}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

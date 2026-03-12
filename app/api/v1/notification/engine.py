@@ -66,10 +66,10 @@ async def list_pending_states(
 async def reload_engine(
     _current_user: User = Depends(get_current_user),
 ):
-    """手动热重载告警引擎配置（从数据库重新加载规则/映射/渠道）."""
+    """手动热重载告警引擎配置（从数据库重新加载规则/目标/渠道）."""
     await alert_engine.reload()
     status = alert_engine.get_status()
     return MessageResponse(
         message=f"Reloaded: {status['rules_count']} rules, "
-                f"{status['mappings_count']} mappings",
+                f"{status['mappings_count']} targets",
     )
