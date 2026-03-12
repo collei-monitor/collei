@@ -28,6 +28,7 @@ from app.api.deps import get_client_ip, get_current_user
 from app.core.config import settings
 from app.core.security import (
     create_access_token,
+    create_ws_token,
     generate_session_token,
     generate_totp_secret,
     get_totp_uri,
@@ -58,7 +59,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 # ── 辅助函数 ──────────────────────────────────────────────────────────────────
 
-def _user_to_read(user: User) -> UserRead:
+def _user_to_read(user: User, *, ws_token: str | None = None) -> UserRead:
     return UserRead(
         uuid=user.uuid,
         username=user.username,
@@ -66,6 +67,7 @@ def _user_to_read(user: User) -> UserRead:
         two_factor_enabled=_get_active_2fa_secret(user) is not None,
         created_at=user.created_at,
         updated_at=user.updated_at,
+        ws_token=ws_token,
     )
 
 
@@ -288,8 +290,9 @@ async def logout(
 
 @router.get("/me", response_model=UserRead)
 async def get_me(current_user: User = Depends(get_current_user)):
-    """获取当前登录用户信息."""
-    return _user_to_read(current_user)
+    """获取当前登录用户信息，同时颁发 60 秒有效的 WebSocket 临时 token."""
+    token = create_ws_token(current_user.uuid)
+    return _user_to_read(current_user, ws_token=token)
 
 
 @router.put("/me", response_model=UserRead)

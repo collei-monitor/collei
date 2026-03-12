@@ -48,6 +48,7 @@ class UserRead(BaseModel):
     two_factor_enabled: bool = False
     created_at: int | None = None
     updated_at: int | None = None
+    ws_token: str | None = Field(None, description="WebSocket 连接专用短时效 token（60 秒）")
 
     model_config = {"from_attributes": True}
 

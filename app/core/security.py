@@ -42,6 +42,25 @@ def create_access_token(
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
+def create_ws_token(user_uuid: str, expires_seconds: int = 60) -> str:
+    """生成短时效 WebSocket 连接专用 token（不绑定 session，60 秒有效）."""
+    expire = int(time.time()) + expires_seconds
+    payload = {
+        "sub": user_uuid,
+        "type": "ws",
+        "exp": expire,
+    }
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
+def decode_ws_token(token: str) -> str | None:
+    """解码 WebSocket token；验证通过返回 user_uuid，否则返回 None."""
+    payload = decode_access_token(token)
+    if payload and payload.get("type") == "ws":
+        return payload.get("sub")
+    return None
+
+
 def decode_access_token(token: str) -> dict | None:
     """解码并验证 JWT；返回 payload dict 或 None."""
     try:
