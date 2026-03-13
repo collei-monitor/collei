@@ -127,6 +127,26 @@ async def delete_server(db: AsyncSession, uuid: str) -> bool:
     return (result.rowcount or 0) > 0
 
 
+async def batch_remap_regions(
+    db: AsyncSession, remap: dict[str, str],
+) -> int:
+    """批量将 servers 表中的争议地区代码重映射（如 TW→CN）.
+
+    返回受影响的行数.
+    """
+    total = 0
+    for old_code, new_code in remap.items():
+        result = await db.execute(
+            update(Server)
+            .where(Server.region == old_code)
+            .values(region=new_code),
+        )
+        total += result.rowcount or 0
+    if total:
+        await db.commit()
+    return total
+
+
 async def approve_server(db: AsyncSession, uuid: str) -> Server | None:
     return await update_server(db, uuid, is_approved=1)
 

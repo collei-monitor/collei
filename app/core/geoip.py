@@ -55,6 +55,19 @@ def _lookup_sync(ip: str, db_name: str) -> str | None:
     return None
 
 
+# 争议地区代码重映射表
+_DISPUTED_REMAP: dict[str, str] = {
+    "TW": "CN",
+}
+
+
+def remap_region(code: str | None, disputed_territory_enabled: bool) -> str | None:
+    """根据争议地区设置重映射国家代码."""
+    if code and disputed_territory_enabled:
+        return _DISPUTED_REMAP.get(code, code)
+    return code
+
+
 async def lookup_country(ip: str | None, db_name: str = DEFAULT_DB) -> str | None:
     """异步查询 IP 归属国家代码.
 

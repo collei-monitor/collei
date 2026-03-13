@@ -69,6 +69,7 @@ _DEFAULT_CONFIGS: dict[str, str] = {
     "offline_threshold_seconds": "10",
     "offline_check_interval": "2",
     "load_retain_seconds": "80",
+    "disputed_territory": "0",
 }
 
 

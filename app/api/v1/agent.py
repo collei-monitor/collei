@@ -13,7 +13,8 @@ import time
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.geoip import DEFAULT_DB, lookup_country
+from app.core.config_cache import config_cache
+from app.core.geoip import DEFAULT_DB, lookup_country, remap_region
 from app.core.server_cache import server_cache
 from app.crud import clients as crud_clients
 from app.crud import monitoring as crud_monitoring
@@ -42,7 +43,9 @@ async def _resolve_region(ipv4: str | None, ipv6: str | None, db: AsyncSession) 
     from app.crud import config as crud_config
     db_name = await crud_config.get_config_value(db, "ip_db") or DEFAULT_DB
     ip = ipv4 or ipv6
-    return await lookup_country(ip, db_name)
+    code = await lookup_country(ip, db_name)
+    disputed = config_cache.get("disputed_territory") == "1"
+    return remap_region(code, disputed)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Agent 注册 & 验证

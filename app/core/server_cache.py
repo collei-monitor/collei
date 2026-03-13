@@ -195,6 +195,14 @@ class ServerCache:
                 self._token_index[new_token] = uuid
         self._nodes_dirty = True
 
+    def remap_regions(self, remap: dict[str, str]) -> None:
+        """批量重映射缓存中所有服务器的 region 字段."""
+        for srv in self._servers.values():
+            old_region = srv.get("region")
+            if old_region and old_region in remap:
+                srv["region"] = remap[old_region]
+        self._nodes_dirty = True
+
     def update_status(
         self,
         uuid: str,
