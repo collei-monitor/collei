@@ -242,4 +242,5 @@ async def set_server_groups(
                 detail=f"Group '{gid}' not found",
             )
     groups = await crud.set_server_groups(db, uuid, body.group_ids)
+    server_cache.set_server_groups(uuid, body.group_ids)
     return groups

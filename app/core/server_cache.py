@@ -13,7 +13,8 @@
 
   # 后台任务使用
   offline = server_cache.get_online_before(threshold_ts)
-  snapshot = server_cache.build_snapshot()
+  snapshot = server_cache.build_status()
+  nodes = server_cache.build_nodes()
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.clients import Server, ServerStatus
+from app.models.clients import Group, Server, ServerGroup, ServerStatus
 from app.models.monitoring import LoadNow
 
 # 广播快照需要的 Server 字段（含 token 用于缓存鉴权）
@@ -40,6 +41,9 @@ _LOAD_FIELDS = (
     "disk", "disk_total", "net_in", "net_out", "tcp", "udp", "process",
 )
 
+# Group 需要缓存的字段
+_GROUP_FIELDS = ("id", "name", "top", "created_at")
+
 
 class ServerCache:
     """服务器数据内存缓存（asyncio 单事件循环下线程安全）."""
@@ -47,19 +51,27 @@ class ServerCache:
     def __init__(self) -> None:
         # uuid → 服务器静态信息
         self._servers: dict[str, dict[str, Any]] = {}
-        # uuid → {status, last_online, boot_time}
+        # uuid → {status, last_online, boot_time, total_flow_out, total_flow_in}
         self._statuses: dict[str, dict[str, Any]] = {}
         # uuid → 最新 load 数据
         self._loads: dict[str, dict[str, Any]] = {}
         # token → uuid 反向索引
         self._token_index: dict[str, str] = {}
+        # group_id → 分组信息
+        self._groups: dict[str, dict[str, Any]] = {}
+        # server_uuid → [group_id, ...]
+        self._server_groups: dict[str, list[str]] = {}
+        # group_id → [server_uuid, ...]
+        self._group_servers: dict[str, list[str]] = {}
+        # 节点数据是否变更（服务器/分组增删改时置 True）
+        self._nodes_dirty: bool = False
 
     # ─────────────────────────────────────────────────────────────────────
     # 预加载
     # ─────────────────────────────────────────────────────────────────────
 
     async def preload(self, db: AsyncSession) -> None:
-        """从数据库全量加载已批准服务器的信息、状态、最新负载到缓存."""
+        """从数据库全量加载已批准服务器的信息、状态、最新负载及分组到缓存."""
         # 加载所有已批准的服务器
         stmt = select(Server).where(Server.is_approved == 1)
         servers = (await db.execute(stmt)).scalars().all()
@@ -77,6 +89,9 @@ class ServerCache:
         if not uuids:
             self._statuses.clear()
             self._loads.clear()
+            self._groups.clear()
+            self._server_groups.clear()
+            self._group_servers.clear()
             return
 
         # 加载状态
@@ -87,6 +102,8 @@ class ServerCache:
                 "status": ss.status,
                 "last_online": ss.last_online,
                 "boot_time": ss.boot_time,
+                "total_flow_out": ss.total_flow_out,
+                "total_flow_in": ss.total_flow_in,
             }
             for ss in statuses
         }
@@ -111,6 +128,21 @@ class ServerCache:
             ld.server_uuid: {f: getattr(ld, f) for f in _LOAD_FIELDS}
             for ld in loads
         }
+
+        # 加载分组
+        all_groups = (await db.execute(select(Group))).scalars().all()
+        self._groups = {
+            g.id: {f: getattr(g, f) for f in _GROUP_FIELDS}
+            for g in all_groups
+        }
+
+        # 加载服务器-分组关联
+        all_sg = (await db.execute(select(ServerGroup))).scalars().all()
+        self._server_groups.clear()
+        self._group_servers.clear()
+        for sg in all_sg:
+            self._server_groups.setdefault(sg.server_uuid, []).append(sg.group_id)
+            self._group_servers.setdefault(sg.group_id, []).append(sg.server_uuid)
 
     # ─────────────────────────────────────────────────────────────────────
     # 写入 / 更新
@@ -138,6 +170,7 @@ class ServerCache:
                 self._token_index.pop(old_token, None)
             if new_token:
                 self._token_index[new_token] = uuid
+        self._nodes_dirty = True
 
     def update_status(
         self,
@@ -146,6 +179,8 @@ class ServerCache:
         status: int | None = None,
         last_online: int | None = None,
         boot_time: int | None = None,
+        total_flow_out: int | None = None,
+        total_flow_in: int | None = None,
     ) -> None:
         """更新服务器状态缓存."""
         existing = self._statuses.get(uuid)
@@ -154,6 +189,8 @@ class ServerCache:
                 "status": status or 0,
                 "last_online": last_online,
                 "boot_time": boot_time,
+                "total_flow_out": total_flow_out,
+                "total_flow_in": total_flow_in,
             }
         else:
             if status is not None:
@@ -162,6 +199,10 @@ class ServerCache:
                 existing["last_online"] = last_online
             if boot_time is not None:
                 existing["boot_time"] = boot_time
+            if total_flow_out is not None:
+                existing["total_flow_out"] = total_flow_out
+            if total_flow_in is not None:
+                existing["total_flow_in"] = total_flow_in
 
     def update_load(self, uuid: str, load_dict: dict[str, Any]) -> None:
         """更新服务器最新负载缓存."""
@@ -176,10 +217,85 @@ class ServerCache:
             self._token_index.pop(srv["token"], None)
         self._statuses.pop(uuid, None)
         self._loads.pop(uuid, None)
+        # 清理分组关联
+        group_ids = self._server_groups.pop(uuid, [])
+        for gid in group_ids:
+            uuids = self._group_servers.get(gid)
+            if uuids and uuid in uuids:
+                uuids.remove(uuid)
+        self._nodes_dirty = True
 
     def get_uuid_by_token(self, token: str) -> str | None:
         """通过 token 查找 uuid（O(1)，仅覆盖 is_approved==1 的服务器）."""
         return self._token_index.get(token)
+
+    # ─────────────────────────────────────────────────────────────────────
+    # 分组缓存管理
+    # ─────────────────────────────────────────────────────────────────────
+
+    def update_group(self, group_id: str, info: dict[str, Any]) -> None:
+        """新增或更新分组缓存."""
+        existing = self._groups.get(group_id)
+        if existing is None:
+            self._groups[group_id] = {f: info.get(f) for f in _GROUP_FIELDS}
+            self._groups[group_id]["id"] = group_id
+        else:
+            for k, v in info.items():
+                if k in existing:
+                    existing[k] = v
+        self._nodes_dirty = True
+
+    def remove_group(self, group_id: str) -> None:
+        """从缓存中移除分组及其关联."""
+        self._groups.pop(group_id, None)
+        server_uuids = self._group_servers.pop(group_id, [])
+        for uuid in server_uuids:
+            gids = self._server_groups.get(uuid)
+            if gids and group_id in gids:
+                gids.remove(group_id)
+        self._nodes_dirty = True
+
+    def set_group_servers(self, group_id: str, server_uuids: list[str]) -> None:
+        """全量替换分组关联的服务器."""
+        old_uuids = self._group_servers.get(group_id, [])
+        for uuid in old_uuids:
+            gids = self._server_groups.get(uuid)
+            if gids and group_id in gids:
+                gids.remove(group_id)
+        self._group_servers[group_id] = list(server_uuids)
+        for uuid in server_uuids:
+            self._server_groups.setdefault(uuid, [])
+            if group_id not in self._server_groups[uuid]:
+                self._server_groups[uuid].append(group_id)
+        self._nodes_dirty = True
+
+    def set_server_groups(self, server_uuid: str, group_ids: list[str]) -> None:
+        """全量替换服务器所属分组."""
+        old_gids = self._server_groups.get(server_uuid, [])
+        for gid in old_gids:
+            uuids = self._group_servers.get(gid)
+            if uuids and server_uuid in uuids:
+                uuids.remove(server_uuid)
+        self._server_groups[server_uuid] = list(group_ids)
+        for gid in group_ids:
+            self._group_servers.setdefault(gid, [])
+            if server_uuid not in self._group_servers[gid]:
+                self._group_servers[gid].append(server_uuid)
+        self._nodes_dirty = True
+
+    # ─────────────────────────────────────────────────────────────────────
+    # 节点变更标记
+    # ─────────────────────────────────────────────────────────────────────
+
+    @property
+    def nodes_dirty(self) -> bool:
+        return self._nodes_dirty
+
+    def clear_nodes_dirty(self) -> None:
+        self._nodes_dirty = False
+
+    def mark_nodes_dirty(self) -> None:
+        self._nodes_dirty = True
 
     # ─────────────────────────────────────────────────────────────────────
     # 离线检测
@@ -201,19 +317,17 @@ class ServerCache:
                 st["status"] = 0
 
     # ─────────────────────────────────────────────────────────────────────
-    # 广播快照
+    # 广播数据构建
     # ─────────────────────────────────────────────────────────────────────
 
-    def build_snapshot(self, *, include_hidden: bool = False) -> dict[str, Any]:
-        """从缓存构建服务器状态快照（仅在线 + 已批准）.
+    def build_nodes(self, *, include_hidden: bool = False) -> dict[str, Any]:
+        """构建节点列表与分组信息（type="nodes"）.
 
-        Args:
-            include_hidden: 是否包含隐藏服务器（管理员视角）。
+        包含所有已批准服务器（含离线），附带分组信息。
         """
         now = int(time.time())
         servers_data: list[dict[str, Any]] = []
 
-        # 按 top desc, created_at desc 排序
         sorted_servers = sorted(
             self._servers.values(),
             key=lambda s: (s.get("top") or 0, s.get("created_at") or 0),
@@ -227,12 +341,72 @@ class ServerCache:
             if not include_hidden and srv.get("hidden", 0) != 0:
                 continue
 
+            st = self._statuses.get(uuid, {})
+            group_ids = self._server_groups.get(uuid, [])
+            groups = [
+                dict(self._groups[gid])
+                for gid in group_ids if gid in self._groups
+            ]
+
+            servers_data.append({
+                "uuid": uuid,
+                "name": srv.get("name"),
+                "cpu_name": srv.get("cpu_name"),
+                "arch": srv.get("arch"),
+                "os": srv.get("os"),
+                "region": srv.get("region"),
+                "top": srv.get("top"),
+                "status": st.get("status", 0),
+                "last_online": st.get("last_online"),
+                "boot_time": st.get("boot_time"),
+                "groups": groups,
+            })
+
+        # 构建分组列表（含 server_uuids）
+        visible_uuids = {s["uuid"] for s in servers_data}
+        sorted_groups = sorted(
+            self._groups.values(),
+            key=lambda g: (g.get("top") or 0, g.get("created_at") or 0),
+            reverse=True,
+        )
+        groups_data: list[dict[str, Any]] = []
+        for grp in sorted_groups:
+            gid = grp["id"]
+            all_uuids = self._group_servers.get(gid, [])
+            groups_data.append({
+                **grp,
+                "server_uuids": [u for u in all_uuids if u in visible_uuids],
+            })
+
+        return {
+            "type": "nodes",
+            "timestamp": now,
+            "servers": servers_data,
+            "groups": groups_data,
+        }
+
+    def build_status(self, *, include_hidden: bool = False) -> dict[str, Any]:
+        """构建快照状态数据（type="status"）.
+
+        以 uuid 为键的字典形式返回，包含静态信息 + 状态 + 负载。
+        """
+        now = int(time.time())
+        servers_data: dict[str, dict[str, Any]] = {}
+
+        for srv in self._servers.values():
+            uuid = srv["uuid"]
+            if srv.get("is_approved") != 1:
+                continue
+            if not include_hidden and srv.get("hidden", 0) != 0:
+                continue
+
             st = self._statuses.get(uuid)
             if not st or st["status"] != 1:
                 continue
 
-            entry: dict[str, Any] = {
-                "uuid": uuid,
+            ld = self._loads.get(uuid)
+
+            servers_data[uuid] = {
                 "name": srv.get("name"),
                 "top": srv.get("top"),
                 "cpu_name": srv.get("cpu_name"),
@@ -244,17 +418,19 @@ class ServerCache:
                 "swap_total": srv.get("swap_total"),
                 "disk_total": srv.get("disk_total"),
                 "virtualization": srv.get("virtualization"),
-                "status": st["status"],
-                "last_online": st["last_online"],
+                "enable_statistics_mode": srv.get("enable_statistics_mode"),
+                "status": {
+                    "status": st["status"],
+                    "last_online": st.get("last_online"),
+                    "boot_time": st.get("boot_time"),
+                    "total_flow_out": st.get("total_flow_out"),
+                    "total_flow_in": st.get("total_flow_in"),
+                },
+                "load": dict(ld) if ld else None,
             }
 
-            ld = self._loads.get(uuid)
-            entry["load"] = dict(ld) if ld else None
-
-            servers_data.append(entry)
-
         return {
-            "type": "snapshot",
+            "type": "status",
             "timestamp": now,
             "servers": servers_data,
         }

@@ -258,9 +258,12 @@ async def agent_report(
     # ── 同步内存缓存 ──
     if hardware_fields:
         server_cache.update_server(server.uuid, hardware_fields)
-    server_cache.update_status(
-        server.uuid, status=1, last_online=now, boot_time=body.boot_time,
-    )
+    cache_status_kwargs: dict = dict(status=1, last_online=now, boot_time=body.boot_time)
+    if body.total_flow_out is not None:
+        cache_status_kwargs["total_flow_out"] = body.total_flow_out
+    if body.total_flow_in is not None:
+        cache_status_kwargs["total_flow_in"] = body.total_flow_in
+    server_cache.update_status(server.uuid, **cache_status_kwargs)
     if load_dict:
         server_cache.update_load(server.uuid, load_dict)
 

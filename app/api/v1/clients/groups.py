@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.api.v1.clients._helpers import build_server_brief
+from app.core.server_cache import server_cache
 from app.crud import clients as crud
 from app.db.session import get_async_session
 from app.models.auth import User
@@ -59,6 +60,12 @@ async def create_group(
         db, name=body.name, top=body.top,
         server_uuids=body.server_uuids or None,
     )
+    server_cache.update_group(group.id, {
+        "id": group.id, "name": group.name,
+        "top": group.top, "created_at": group.created_at,
+    })
+    if body.server_uuids:
+        server_cache.set_group_servers(group.id, body.server_uuids)
     return group
 
 
@@ -78,6 +85,10 @@ async def batch_update_group_tops(
     updated_count, failed_count, failed_ids = await crud.batch_update_group_tops(
         db, body.updates
     )
+
+    for gid, top_val in body.updates.items():
+        if gid not in failed_ids:
+            server_cache.update_group(gid, {"top": top_val})
 
     return GroupTopUpdateResponse(
         total=len(body.updates),
@@ -134,9 +145,11 @@ async def update_group(
                     detail=f"Server '{uuid}' not found",
                 )
         await crud.set_group_servers(db, group_id, server_uuids)
+        server_cache.set_group_servers(group_id, server_uuids)
 
     if update_data:
         updated = await crud.update_group(db, group_id, **update_data)
+        server_cache.update_group(group_id, update_data)
     else:
         updated = await crud.get_group_by_id(db, group_id)
 
@@ -154,6 +167,7 @@ async def delete_group(
     if not deleted:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
+    server_cache.remove_group(group_id)
     return MessageResponse(message="Group deleted")
 
 

@@ -100,15 +100,27 @@ class BackgroundTasks:
     # ─────────────────────────────────────────────────────────────────────────
 
     async def _broadcast_snapshot(self) -> None:
-        """从内存缓存构建快照并广播给所有 WebSocket 客户端."""
+        """从内存缓存构建数据并广播给所有 WebSocket 客户端.
+
+        - 当节点数据变更时（_nodes_dirty），广播 type="nodes"
+        - 每个周期固定广播 type="status"
+        """
         from app.core.ws_manager import ws_manager
 
         while True:
             try:
                 if ws_manager.has_connections:
-                    public_snapshot = server_cache.build_snapshot(include_hidden=False)
-                    full_snapshot = server_cache.build_snapshot(include_hidden=True)
-                    await ws_manager.broadcast(public_snapshot, full_snapshot)
+                    # 节点变更时推送全量节点列表
+                    if server_cache.nodes_dirty:
+                        server_cache.clear_nodes_dirty()
+                        public_nodes = server_cache.build_nodes(include_hidden=False)
+                        full_nodes = server_cache.build_nodes(include_hidden=True)
+                        await ws_manager.broadcast(public_nodes, full_nodes)
+
+                    # 定时推送状态快照
+                    public_status = server_cache.build_status(include_hidden=False)
+                    full_status = server_cache.build_status(include_hidden=True)
+                    await ws_manager.broadcast(public_status, full_status)
 
             except Exception as e:
                 print(f"⚠️ 广播快照出错: {e}")
