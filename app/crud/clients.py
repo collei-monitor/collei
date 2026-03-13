@@ -393,12 +393,20 @@ async def get_billing_rule(
     return result.scalar_one_or_none()
 
 
+async def get_all_billing_rules(
+    db: AsyncSession,
+) -> Sequence[ServerBillingRule]:
+    """获取所有计费规则."""
+    result = await db.execute(select(ServerBillingRule))
+    return result.scalars().all()
+
+
 async def upsert_billing_rule(
     db: AsyncSession,
     uuid: str,
     **kwargs,
 ) -> ServerBillingRule:
-    """创建或更新服务器计费规则."""
+    """创建或更新服务器计费规则，同时自动启用 enable_statistics_mode."""
     existing = await get_billing_rule(db, uuid)
     if existing:
         if kwargs:
@@ -412,6 +420,12 @@ async def upsert_billing_rule(
 
     rule = ServerBillingRule(uuid=uuid, **kwargs)
     db.add(rule)
+    # 新建计费规则时自动开启统计模式
+    await db.execute(
+        update(Server)
+        .where(Server.uuid == uuid)
+        .values(enable_statistics_mode=1)
+    )
     await db.flush()
     return rule
 

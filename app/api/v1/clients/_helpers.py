@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.schemas.clients import GroupRead, ServerBrief, ServerFullDetail
+from app.schemas.clients import BillingBrief, GroupRead, ServerBrief, ServerFullDetail
 
 
 def build_server_brief(server, status_obj=None, groups=None) -> ServerBrief:
@@ -28,8 +28,10 @@ def build_server_brief(server, status_obj=None, groups=None) -> ServerBrief:
     )
 
 
-def build_server_full_detail(server, status_obj=None, groups=None) -> ServerFullDetail:
-    """构建服务器完整详情（包含所有字段、状态和分组）."""
+def build_server_full_detail(
+    server, status_obj=None, groups=None, billing_brief=None,
+) -> ServerFullDetail:
+    """构建服务器完整详情（包含所有字段、状态、分组和计费）."""
     return ServerFullDetail(
         uuid=server.uuid,
         name=server.name,
@@ -59,4 +61,5 @@ def build_server_full_detail(server, status_obj=None, groups=None) -> ServerFull
         total_flow_out=status_obj.total_flow_out if status_obj else None,
         total_flow_in=status_obj.total_flow_in if status_obj else None,
         groups=[GroupRead.model_validate(g) for g in groups] if groups else [],
+        billing=BillingBrief(**billing_brief) if billing_brief else None,
     )

@@ -58,6 +58,13 @@ async def create_server(
         remark=body.remark,
         is_approved=1,
     )
+    server_cache.update_server(server.uuid, {
+        f: getattr(server, f, None) for f in (
+            "uuid", "name", "top", "cpu_name", "cpu_cores", "arch", "os",
+            "region", "mem_total", "swap_total", "disk_total", "virtualization",
+            "hidden", "is_approved", "created_at", "token", "enable_statistics_mode",
+        )
+    })
     return ServerCreateResponse(
         uuid=server.uuid,
         name=server.name,
@@ -70,14 +77,15 @@ async def list_servers(
     _current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_session),
 ):
-    """获取所有服务器列表（包含完整详情 + 状态 + 分组）."""
+    """获取所有服务器列表（包含完整详情 + 状态 + 分组 + 计费摘要）."""
     servers = await crud.get_all_servers(db)
     statuses = {s.uuid: s for s in await crud.get_all_server_statuses(db)}
     result = []
     for srv in servers:
         groups = await crud.get_server_groups(db, srv.uuid)
         st = statuses.get(srv.uuid)
-        result.append(build_server_full_detail(srv, st, groups))
+        billing_brief = server_cache.build_billing_brief(srv.uuid)
+        result.append(build_server_full_detail(srv, st, groups, billing_brief))
     return result
 
 

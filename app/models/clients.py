@@ -86,6 +86,10 @@ class Server(Base):
         "ServerGroup", back_populates="server",
         cascade="all, delete-orphan",
     )
+    billing_rule: Mapped["ServerBillingRule | None"] = relationship(
+        "ServerBillingRule", uselist=False,
+        cascade="all, delete-orphan",
+    )
 
 
 # ─── Server Status ────────────────────────────────────────────────────────────
@@ -171,3 +175,5 @@ class ServerBillingRule(Base):
     traffic_reset_day: Mapped[int | None] = mapped_column(Integer)
     traffic_threshold: Mapped[int | None] = mapped_column(Integer)
     accounting_mode: Mapped[int | None] = mapped_column(Integer)
+    billing_cycle_cost_code: Mapped[str | None] = mapped_column(String)
+    expiry_date: Mapped[int | None] = mapped_column(Integer)

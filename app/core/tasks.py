@@ -4,12 +4,15 @@
   1. 离线检测 — 基于内存缓存检测超时服务器并标记为离线（启动首次从数据库检测）
   2. 广播快照 — 从内存缓存构建快照推送给 WebSocket 客户端
   3. 数据清理 — 定期清除过期的 load_now 监控记录（周期 = load_retain_seconds * 2）
+  4. 计费管理 — 自动续期过期服务器、定期重算周期流量
 """
 
 from __future__ import annotations
 
 import asyncio
+import calendar
 import time
+from datetime import datetime, timezone
 
 from sqlalchemy import update, delete
 
@@ -17,7 +20,7 @@ from app.core.config import settings
 from app.core.config_cache import config_cache
 from app.core.server_cache import server_cache
 from app.db.session import async_session_factory
-from app.models.clients import ServerStatus
+from app.models.clients import ServerStatus, ServerBillingRule
 from app.models.monitoring import LoadNow
 
 
@@ -32,6 +35,7 @@ class BackgroundTasks:
         self._tasks.append(asyncio.create_task(self._check_offline_servers()))
         self._tasks.append(asyncio.create_task(self._broadcast_snapshot()))
         self._tasks.append(asyncio.create_task(self._purge_old_load()))
+        self._tasks.append(asyncio.create_task(self._billing_check()))
 
         # 启动告警状态机引擎
         from app.core.alert_engine import alert_engine
@@ -158,6 +162,66 @@ class BackgroundTasks:
                 print(f"⚠️ 数据清理任务出错: {e}")
 
             await asyncio.sleep(interval)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Task 4: 计费管理（自动续期 + 周期流量重算）
+    # ─────────────────────────────────────────────────────────────────────────
+
+    async def _billing_check(self) -> None:
+        """定期检查计费状态.
+
+        1. 自动续期：在线且已过期的服务器自动延长一个计费周期
+        2. 周期流量重算：从数据库重新计算周期流量（修正增量累加偏差）
+
+        每 60 秒执行一次。
+        """
+        while True:
+            try:
+                now = int(time.time())
+                # 遍历缓存中的计费规则
+                for uuid, rule in list(server_cache._billing_rules.items()):
+                    expiry = rule.get("expiry_date")
+                    cycle = rule.get("billing_cycle")
+                    if not expiry or not cycle:
+                        continue
+
+                    # 服务器在线且已过期 → 自动续期
+                    st = server_cache._statuses.get(uuid)
+                    if st and st.get("status") == 1 and expiry < now:
+                        new_expiry = self._add_months(expiry, cycle)
+                        # 更新数据库
+                        async with async_session_factory() as session:
+                            await session.execute(
+                                update(ServerBillingRule)
+                                .where(ServerBillingRule.uuid == uuid)
+                                .values(expiry_date=new_expiry)
+                            )
+                            await session.commit()
+                        # 更新缓存
+                        rule["expiry_date"] = new_expiry
+                        print(f"🔄 服务器 {uuid} 已自动续期至 {new_expiry}")
+
+                # 从数据库重新计算周期流量
+                async with async_session_factory() as session:
+                    await server_cache.recalc_cycle_traffic(session)
+
+            except Exception as e:
+                print(f"⚠️ 计费检查任务出错: {e}")
+
+            await asyncio.sleep(60)
+
+    @staticmethod
+    def _add_months(timestamp: int, months: int) -> int:
+        """将时间戳增加指定月数."""
+        dt = datetime.fromtimestamp(timestamp, tz=timezone.utc)
+        month = dt.month - 1 + months
+        year = dt.year + month // 12
+        month = month % 12 + 1
+        day = min(dt.day, calendar.monthrange(year, month)[1])
+        result = datetime(
+            year, month, day, dt.hour, dt.minute, dt.second, tzinfo=timezone.utc,
+        )
+        return int(result.timestamp())
 
 
 # 全局任务管理器实例

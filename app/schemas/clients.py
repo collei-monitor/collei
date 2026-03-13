@@ -125,6 +125,9 @@ class ServerFullDetail(BaseModel):
     # 所属分组
     groups: list[GroupRead] = []
 
+    # 计费信息
+    billing: BillingBrief | None = None
+
     model_config = {"from_attributes": True}
 
 
@@ -251,13 +254,16 @@ class GroupTopUpdateResponse(BaseModel):
 
 class BillingRuleCreate(BaseModel):
     """创建/更新服务器计费规则."""
-    billing_cycle: int | None = Field(None, description="计费周期数值")
-    billing_cycle_data: int | None = Field(None, description="计费周期数据")
+    billing_cycle: int | None = Field(None, description="计费周期数值（月）")
+    billing_cycle_data: int | None = Field(None, description="计费周期日（出账单日）")
     billing_cycle_cost: float | None = Field(None, description="周期费用")
-    traffic_reset_day: int | None = Field(None, description="流量重置日")
+    traffic_reset_day: int | None = Field(None, ge=-1, le=31,
+        description="流量重置日: 0=不重置, -1=每月最后一天, 1-31=指定日")
     traffic_threshold: int | None = Field(None, ge=0, description="周期流量阈值 (Bytes)")
     accounting_mode: int | None = Field(None, ge=1, le=5,
         description="流量计算模式: 1-仅出站 2-仅入站 3-进出总和 4-取最大 5-取最小")
+    billing_cycle_cost_code: str | None = Field(None, description="货币代码（如 USD, CNY）")
+    expiry_date: int | None = Field(None, description="到期时间戳")
 
 
 class BillingRuleRead(BaseModel):
@@ -269,8 +275,21 @@ class BillingRuleRead(BaseModel):
     traffic_reset_day: int | None = None
     traffic_threshold: int | None = None
     accounting_mode: int | None = None
+    billing_cycle_cost_code: str | None = None
+    expiry_date: int | None = None
 
     model_config = {"from_attributes": True}
+
+
+class BillingBrief(BaseModel):
+    """计费摘要 — 用于 WS 推送和服务器列表."""
+    billing_cycle: int | None = None
+    billing_cycle_cost: float | None = None
+    billing_cycle_cost_code: str | None = None
+    traffic_threshold: int | None = None
+    traffic_used: int | None = None
+    accounting_mode: int | None = None
+    expiry_date: int | None = None
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

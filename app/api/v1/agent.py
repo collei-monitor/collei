@@ -237,6 +237,10 @@ async def agent_report(
                         net_out=net_out or 0,
                         ts=now,
                     )
+                    # 增量累加缓存中的周期流量
+                    server_cache.add_cycle_traffic(
+                        server.uuid, net_in or 0, net_out or 0,
+                    )
 
     # ── 更新服务器状态为在线 ──
     status_kwargs: dict = dict(

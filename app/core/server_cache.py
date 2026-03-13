@@ -25,7 +25,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.clients import Group, Server, ServerGroup, ServerStatus
+from app.models.clients import Group, Server, ServerBillingRule, ServerGroup, ServerStatus
 from app.models.monitoring import LoadNow
 
 # 广播快照需要的 Server 字段（含 token 用于缓存鉴权）
@@ -43,6 +43,13 @@ _LOAD_FIELDS = (
 
 # Group 需要缓存的字段
 _GROUP_FIELDS = ("id", "name", "top", "created_at")
+
+# BillingRule 需要缓存的字段
+_BILLING_FIELDS = (
+    "uuid", "billing_cycle", "billing_cycle_data", "billing_cycle_cost",
+    "traffic_reset_day", "traffic_threshold", "accounting_mode",
+    "billing_cycle_cost_code", "expiry_date",
+)
 
 
 class ServerCache:
@@ -63,6 +70,10 @@ class ServerCache:
         self._server_groups: dict[str, list[str]] = {}
         # group_id → [server_uuid, ...]
         self._group_servers: dict[str, list[str]] = {}
+        # uuid → 计费规则
+        self._billing_rules: dict[str, dict[str, Any]] = {}
+        # uuid → 当前周期已用流量
+        self._cycle_traffic: dict[str, int] = {}
         # 节点数据是否变更（服务器/分组增删改时置 True）
         self._nodes_dirty: bool = False
 
@@ -71,7 +82,7 @@ class ServerCache:
     # ─────────────────────────────────────────────────────────────────────
 
     async def preload(self, db: AsyncSession) -> None:
-        """从数据库全量加载已批准服务器的信息、状态、最新负载及分组到缓存."""
+        """从数据库全量加载已批准服务器的信息、状态、最新负载、分组及计费规则到缓存."""
         # 加载所有已批准的服务器
         stmt = select(Server).where(Server.is_approved == 1)
         servers = (await db.execute(stmt)).scalars().all()
@@ -92,6 +103,8 @@ class ServerCache:
             self._groups.clear()
             self._server_groups.clear()
             self._group_servers.clear()
+            self._billing_rules.clear()
+            self._cycle_traffic.clear()
             return
 
         # 加载状态
@@ -143,6 +156,16 @@ class ServerCache:
         for sg in all_sg:
             self._server_groups.setdefault(sg.server_uuid, []).append(sg.group_id)
             self._group_servers.setdefault(sg.group_id, []).append(sg.server_uuid)
+
+        # 加载计费规则
+        all_rules = (await db.execute(select(ServerBillingRule))).scalars().all()
+        self._billing_rules = {
+            r.uuid: {f: getattr(r, f) for f in _BILLING_FIELDS}
+            for r in all_rules
+        }
+
+        # 批量计算周期流量
+        await self._recalc_cycle_traffic(db)
 
     # ─────────────────────────────────────────────────────────────────────
     # 写入 / 更新
@@ -282,6 +305,71 @@ class ServerCache:
             if server_uuid not in self._group_servers[gid]:
                 self._group_servers[gid].append(server_uuid)
         self._nodes_dirty = True
+
+    # ─────────────────────────────────────────────────────────────────────
+    # 计费规则缓存管理
+    # ─────────────────────────────────────────────────────────────────────
+
+    def update_billing_rule(self, uuid: str, info: dict[str, Any]) -> None:
+        """新增或更新计费规则缓存."""
+        existing = self._billing_rules.get(uuid)
+        if existing is None:
+            self._billing_rules[uuid] = {f: info.get(f) for f in _BILLING_FIELDS}
+            self._billing_rules[uuid]["uuid"] = uuid
+        else:
+            for k, v in info.items():
+                if k in existing:
+                    existing[k] = v
+
+    def remove_billing_rule(self, uuid: str) -> None:
+        """移除计费规则缓存."""
+        self._billing_rules.pop(uuid, None)
+        self._cycle_traffic.pop(uuid, None)
+
+    def get_billing_rule(self, uuid: str) -> dict[str, Any] | None:
+        """获取缓存中的计费规则."""
+        return self._billing_rules.get(uuid)
+
+    def update_cycle_traffic(self, uuid: str, traffic_used: int) -> None:
+        """设置服务器当前周期已用流量."""
+        self._cycle_traffic[uuid] = traffic_used
+
+    def add_cycle_traffic(self, uuid: str, net_in: int, net_out: int) -> None:
+        """增量累加周期流量（Agent 上报时调用）."""
+        rule = self._billing_rules.get(uuid)
+        if not rule:
+            return
+        from app.crud.monitoring import calc_traffic_used
+        increment = calc_traffic_used(net_in, net_out, rule.get("accounting_mode"))
+        self._cycle_traffic[uuid] = self._cycle_traffic.get(uuid, 0) + increment
+
+    async def _recalc_cycle_traffic(self, db: AsyncSession) -> None:
+        """从数据库重新计算所有有计费规则的服务器的周期流量."""
+        from app.crud.monitoring import batch_get_cycle_traffic
+        if not self._billing_rules:
+            self._cycle_traffic.clear()
+            return
+        rules_list = list(self._billing_rules.values())
+        self._cycle_traffic = await batch_get_cycle_traffic(db, rules_list)
+
+    async def recalc_cycle_traffic(self, db: AsyncSession) -> None:
+        """公开方法：重新计算周期流量."""
+        await self._recalc_cycle_traffic(db)
+
+    def build_billing_brief(self, uuid: str) -> dict[str, Any] | None:
+        """构建计费摘要信息."""
+        rule = self._billing_rules.get(uuid)
+        if not rule:
+            return None
+        return {
+            "billing_cycle": rule.get("billing_cycle"),
+            "billing_cycle_cost": rule.get("billing_cycle_cost"),
+            "billing_cycle_cost_code": rule.get("billing_cycle_cost_code"),
+            "traffic_threshold": rule.get("traffic_threshold"),
+            "traffic_used": self._cycle_traffic.get(uuid, 0),
+            "accounting_mode": rule.get("accounting_mode"),
+            "expiry_date": rule.get("expiry_date"),
+        }
 
     # ─────────────────────────────────────────────────────────────────────
     # 节点变更标记
@@ -427,6 +515,7 @@ class ServerCache:
                     "total_flow_in": st.get("total_flow_in"),
                 },
                 "load": dict(ld) if ld else None,
+                "billing": self.build_billing_brief(uuid),
             }
 
         return {

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import calendar
 import time
+from datetime import datetime, timezone
 from typing import Sequence
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.monitoring import LoadNow, TrafficHourlyStat
@@ -233,3 +235,144 @@ async def purge_old_traffic_hourly(
         )
     )
     return result.rowcount or 0
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 周期流量计算
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def get_cycle_start_ts(traffic_reset_day: int, billing_cycle_data: int | None = None) -> int:
+    """根据流量重置日计算当前周期的起始时间戳.
+
+    Args:
+        traffic_reset_day: 流量重置日 (0=不重置, -1=每月最后一天, 1-31=指定日)
+        billing_cycle_data: 计费周期日（当 traffic_reset_day 为 None 时回退使用）
+    """
+    effective_day = traffic_reset_day
+    if effective_day is None:
+        effective_day = billing_cycle_data if billing_cycle_data else 0
+    if effective_day == 0:
+        return 0  # 不重置
+
+    now = datetime.now(timezone.utc)
+
+    if effective_day == -1:
+        last_day = calendar.monthrange(now.year, now.month)[1]
+        if now.day >= last_day:
+            cycle_start = datetime(now.year, now.month, last_day, 0, 0, 0, tzinfo=timezone.utc)
+        else:
+            prev_year, prev_month = (now.year, now.month - 1) if now.month > 1 else (now.year - 1, 12)
+            prev_last = calendar.monthrange(prev_year, prev_month)[1]
+            cycle_start = datetime(prev_year, prev_month, prev_last, 0, 0, 0, tzinfo=timezone.utc)
+    else:
+        reset_day = min(effective_day, 28)  # 安全范围
+        if now.day >= reset_day:
+            try:
+                actual_day = min(reset_day, calendar.monthrange(now.year, now.month)[1])
+                cycle_start = datetime(now.year, now.month, actual_day, 0, 0, 0, tzinfo=timezone.utc)
+            except ValueError:
+                cycle_start = datetime(now.year, now.month, 1, 0, 0, 0, tzinfo=timezone.utc)
+        else:
+            prev_year, prev_month = (now.year, now.month - 1) if now.month > 1 else (now.year - 1, 12)
+            try:
+                actual_day = min(reset_day, calendar.monthrange(prev_year, prev_month)[1])
+                cycle_start = datetime(prev_year, prev_month, actual_day, 0, 0, 0, tzinfo=timezone.utc)
+            except ValueError:
+                cycle_start = datetime(prev_year, prev_month, 1, 0, 0, 0, tzinfo=timezone.utc)
+
+    return int(cycle_start.timestamp())
+
+
+def calc_traffic_used(net_in_total: int, net_out_total: int, accounting_mode: int | None) -> int:
+    """根据流量计算模式计算已用流量.
+
+    Args:
+        net_in_total: 周期内入站流量总和
+        net_out_total: 周期内出站流量总和
+        accounting_mode: 1-仅出站 2-仅入站 3-总和 4-取最大 5-取最小
+    """
+    mode = accounting_mode or 1
+    if mode == 1:
+        return net_out_total
+    elif mode == 2:
+        return net_in_total
+    elif mode == 3:
+        return net_in_total + net_out_total
+    elif mode == 4:
+        return max(net_in_total, net_out_total)
+    elif mode == 5:
+        return min(net_in_total, net_out_total)
+    return net_out_total
+
+
+async def get_cycle_traffic(
+    db: AsyncSession,
+    server_uuid: str,
+    *,
+    traffic_reset_day: int,
+    billing_cycle_data: int | None = None,
+    accounting_mode: int | None = None,
+) -> int:
+    """计算服务器当前周期的已用流量."""
+    cycle_start = get_cycle_start_ts(traffic_reset_day, billing_cycle_data)
+    if cycle_start == 0:
+        return 0
+
+    stmt = select(
+        func.coalesce(func.sum(TrafficHourlyStat.net_in), 0).label("total_in"),
+        func.coalesce(func.sum(TrafficHourlyStat.net_out), 0).label("total_out"),
+    ).where(
+        TrafficHourlyStat.server_uuid == server_uuid,
+        TrafficHourlyStat.time >= cycle_start,
+    )
+    row = (await db.execute(stmt)).one()
+    return calc_traffic_used(row.total_in, row.total_out, accounting_mode)
+
+
+async def batch_get_cycle_traffic(
+    db: AsyncSession,
+    billing_rules: list[dict],
+) -> dict[str, int]:
+    """批量计算多台服务器的周期流量.
+
+    Args:
+        billing_rules: [{"uuid": ..., "traffic_reset_day": ..., "billing_cycle_data": ..., "accounting_mode": ...}]
+
+    Returns:
+        {uuid: traffic_used}
+    """
+    result: dict[str, int] = {}
+    # 按 cycle_start 分组查询以减少 DB 往返
+    groups: dict[int, list[dict]] = {}
+    for rule in billing_rules:
+        reset_day = rule.get("traffic_reset_day")
+        if reset_day is None:
+            reset_day = rule.get("billing_cycle_data", 0)
+        if reset_day == 0:
+            result[rule["uuid"]] = 0
+            continue
+        cs = get_cycle_start_ts(reset_day, rule.get("billing_cycle_data"))
+        if cs == 0:
+            result[rule["uuid"]] = 0
+            continue
+        groups.setdefault(cs, []).append(rule)
+
+    for cycle_start, rules in groups.items():
+        uuids = [r["uuid"] for r in rules]
+        stmt = select(
+            TrafficHourlyStat.server_uuid,
+            func.coalesce(func.sum(TrafficHourlyStat.net_in), 0).label("total_in"),
+            func.coalesce(func.sum(TrafficHourlyStat.net_out), 0).label("total_out"),
+        ).where(
+            TrafficHourlyStat.server_uuid.in_(uuids),
+            TrafficHourlyStat.time >= cycle_start,
+        ).group_by(TrafficHourlyStat.server_uuid)
+
+        rows = (await db.execute(stmt)).all()
+        traffic_map = {row.server_uuid: (row.total_in, row.total_out) for row in rows}
+        for rule in rules:
+            uuid = rule["uuid"]
+            in_total, out_total = traffic_map.get(uuid, (0, 0))
+            result[uuid] = calc_traffic_used(in_total, out_total, rule.get("accounting_mode"))
+
+    return result
