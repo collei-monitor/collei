@@ -25,6 +25,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_client_ip, get_current_user
+from app.core.alert_engine import alert_engine
 from app.core.config import settings
 from app.core.security import (
     create_access_token,
@@ -164,6 +165,12 @@ async def login(
                 attempt_type="2fa",
                 success=True,
             )
+            await alert_engine.notify_login(
+                username=body.username,
+                ip=client_ip,
+                user_agent=request.headers.get("user-agent"),
+                login_method="password+2fa",
+            )
             return token
 
         challenge = generate_session_token()
@@ -190,6 +197,14 @@ async def login(
         username=body.username,
         attempt_type="password",
         success=True,
+    )
+
+    # 6) 登录通知
+    await alert_engine.notify_login(
+        username=body.username,
+        ip=client_ip,
+        user_agent=request.headers.get("user-agent"),
+        login_method="password",
     )
 
     return token
@@ -263,6 +278,12 @@ async def login_with_2fa(
         username=user.username,
         attempt_type="2fa",
         success=True,
+    )
+    await alert_engine.notify_login(
+        username=user.username,
+        ip=client_ip,
+        user_agent=request.headers.get("user-agent"),
+        login_method="password+2fa",
     )
     return token
 

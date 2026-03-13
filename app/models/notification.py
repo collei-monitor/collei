@@ -47,6 +47,8 @@ class AlertRule(Base):
         Integer, default=0, server_default=text("0"))
     notify_recovery: Mapped[int] = mapped_column(
         Integer, default=0, server_default=text("0"))
+    custom_message: Mapped[str | None] = mapped_column(Text)
+    traffic_notify_step: Mapped[float | None] = mapped_column(Float)
     created_at: Mapped[int] = mapped_column(Integer, default=_now)
 
     # 关系

@@ -49,13 +49,18 @@ class AlertStatus(str, Enum):
 
 class _AlertState:
     """单个 (server_uuid, rule_id) 对的内存状态."""
-    __slots__ = ("status", "pending_since", "last_notified_at", "value")
+    __slots__ = (
+        "status", "pending_since", "last_notified_at", "value",
+        "last_notified_level",
+    )
 
     def __init__(self) -> None:
         self.status: AlertStatus = AlertStatus.OK
         self.pending_since: float = 0.0
         self.last_notified_at: float = 0.0
         self.value: float = 0.0
+        # traffic_percent 梯度通知：上次已通知的百分比档位
+        self.last_notified_level: float = 0.0
 
 
 # ─── 条件比较 ─────────────────────────────────────────────────────────────────
@@ -130,6 +135,8 @@ class AlertEngine:
                     "threshold": r.threshold,
                     "duration": r.duration,
                     "notify_recovery": r.notify_recovery,
+                    "custom_message": r.custom_message,
+                    "traffic_notify_step": r.traffic_notify_step,
                 }
                 for r in rows
             }
@@ -236,6 +243,28 @@ class AlertEngine:
             value = 1.0 if status_data.get("status", 0) == 0 else 0.0
             return _compare(value, condition, threshold), value
 
+        # 到期提醒 — value=距到期天数, threshold=提前多少天提醒
+        if metric == "expiry":
+            billing = server_cache._billing_rules.get(server_uuid)
+            if not billing or not billing.get("expiry_date"):
+                return False, 0.0
+            days_left = (billing["expiry_date"] - time.time()) / 86400.0
+            value = days_left
+            return _compare(value, condition, threshold), value
+
+        # 周期流量百分比 — value=当前使用百分比
+        if metric == "traffic_percent":
+            billing = server_cache._billing_rules.get(server_uuid)
+            if not billing:
+                return False, 0.0
+            traffic_threshold = billing.get("traffic_threshold") or 0
+            if traffic_threshold <= 0:
+                return False, 0.0
+            traffic_used = server_cache._cycle_traffic.get(server_uuid, 0)
+            pct = (traffic_used / traffic_threshold) * 100.0
+            value = pct
+            return _compare(value, condition, threshold), value
+
         # 其余指标需要服务器在线
         if status_data.get("status", 0) != 1:
             return False, 0.0
@@ -288,6 +317,12 @@ class AlertEngine:
         now = time.time()
 
         for rule_id, rule in self._rules.items():
+            metric = rule["metric"]
+
+            # login 是事件驱动指标，不参与轮询评估
+            if metric == "login":
+                continue
+
             server_uuids = self._resolve_servers(rule_id)
             channel_ids = self._channel_ids_for_rule(rule_id)
 
@@ -301,6 +336,46 @@ class AlertEngine:
 
                 triggered, value = self._evaluate(uuid, rule)
                 state.value = value
+
+                # ── traffic_percent 梯度通知特殊逻辑 ────────────
+                if metric == "traffic_percent":
+                    step = rule.get("traffic_notify_step") or 0
+                    if triggered and step > 0:
+                        # 计算当前所处档位 (threshold, threshold+step, ...)
+                        base = rule["threshold"]
+                        current_level = base + (
+                            int((value - base) / step) * step
+                        )
+                        if current_level > state.last_notified_level:
+                            state.last_notified_level = current_level
+                            state.status = AlertStatus.FIRING
+                            state.last_notified_at = now
+                            if not is_new:
+                                await self._on_firing(
+                                    uuid, rule, value, channel_ids)
+                    elif triggered and not is_new:
+                        # 无 step 但超阈值：普通单次告警
+                        if state.status == AlertStatus.OK:
+                            state.status = AlertStatus.FIRING
+                            state.last_notified_at = now
+                            await self._on_firing(
+                                uuid, rule, value, channel_ids)
+                    elif not triggered:
+                        if state.status != AlertStatus.OK:
+                            old_status = state.status
+                            state.status = AlertStatus.OK
+                            state.last_notified_level = 0.0
+                            if old_status == AlertStatus.FIRING \
+                                    and rule.get("notify_recovery", 0) == 1:
+                                await self._on_resolved(
+                                    uuid, rule, value, channel_ids)
+                    elif is_new and triggered:
+                        state.status = AlertStatus.FIRING
+                        state.last_notified_at = now
+                        state.last_notified_level = rule["threshold"]
+                    continue
+
+                # ── 通用状态机逻辑 ──────────────────────────────
 
                 # 新建状态条目且条件已满足时，直接置为
                 # FIRING 但不发送通知，避免对已有状态
@@ -356,12 +431,20 @@ class AlertEngine:
         # 构造消息
         srv = server_cache._servers.get(server_uuid, {})
         server_name = srv.get("name", server_uuid)
-        message = (
-            f"🔴 告警触发: {rule['name']}\n"
-            f"服务器: {server_name} ({server_uuid})\n"
-            f"指标: {rule['metric']} {rule['condition']} {rule['threshold']}\n"
-            f"当前值: {value:.4f}"
-        )
+
+        custom = rule.get("custom_message")
+        if custom:
+            message = self._render_template(
+                custom, server_name=server_name, server_uuid=server_uuid,
+                rule=rule, value=value, event="firing",
+            )
+        else:
+            message = (
+                f"🔴 告警触发: {rule['name']}\n"
+                f"服务器: {server_name} ({server_uuid})\n"
+                f"指标: {rule['metric']} {rule['condition']} {rule['threshold']}\n"
+                f"当前值: {value:.4f}"
+            )
 
         await self._notify(channel_ids, message)
         logger.warning(
@@ -392,12 +475,20 @@ class AlertEngine:
 
         srv = server_cache._servers.get(server_uuid, {})
         server_name = srv.get("name", server_uuid)
-        message = (
-            f"🟢 告警恢复: {rule['name']}\n"
-            f"服务器: {server_name} ({server_uuid})\n"
-            f"指标: {rule['metric']} 已恢复正常\n"
-            f"当前值: {value:.4f}"
-        )
+
+        custom = rule.get("custom_message")
+        if custom:
+            message = self._render_template(
+                custom, server_name=server_name, server_uuid=server_uuid,
+                rule=rule, value=value, event="resolved",
+            )
+        else:
+            message = (
+                f"🟢 告警恢复: {rule['name']}\n"
+                f"服务器: {server_name} ({server_uuid})\n"
+                f"指标: {rule['metric']} 已恢复正常\n"
+                f"当前值: {value:.4f}"
+            )
 
         await self._notify(channel_ids, message)
         logger.info(
@@ -428,6 +519,69 @@ class AlertEngine:
                     "addition": prov.addition if prov else None,
                 }
                 await send_notification(ch, message)
+
+    # ── 模板渲染 ──────────────────────────────────────────────────────
+
+    @staticmethod
+    def _render_template(
+        template: str,
+        *,
+        server_name: str,
+        server_uuid: str,
+        rule: dict[str, Any],
+        value: float,
+        event: str,
+    ) -> str:
+        """渲染自定义消息模板，替换变量占位符."""
+        return template.format_map({
+            "server_name": server_name,
+            "server_uuid": server_uuid,
+            "metric": rule.get("metric", ""),
+            "value": f"{value:.4f}",
+            "threshold": rule.get("threshold", ""),
+            "rule_name": rule.get("name", ""),
+            "condition": rule.get("condition", ""),
+            "event": event,
+        })
+
+    # ── 事件驱动通知 ──────────────────────────────────────────────────
+
+    async def notify_login(
+        self,
+        *,
+        username: str,
+        ip: str | None = None,
+        user_agent: str | None = None,
+        login_method: str = "password",
+    ) -> None:
+        """登录成功时由 auth 层调用，向 metric='login' 的规则渠道发送通知."""
+        for rule_id, rule in self._rules.items():
+            if rule["metric"] != "login":
+                continue
+            channel_ids = self._channel_ids_for_rule(rule_id)
+            if not channel_ids:
+                continue
+
+            custom = rule.get("custom_message")
+            if custom:
+                message = custom.format_map({
+                    "username": username,
+                    "ip": ip or "unknown",
+                    "user_agent": user_agent or "unknown",
+                    "login_method": login_method,
+                    "rule_name": rule.get("name", ""),
+                })
+            else:
+                message = (
+                    f"🔑 新登录通知\n"
+                    f"用户: {username}\n"
+                    f"IP: {ip or 'unknown'}\n"
+                    f"方式: {login_method}\n"
+                    f"UA: {user_agent or 'unknown'}"
+                )
+
+            await self._notify(channel_ids, message)
+            logger.info("🔑 登录通知: %s from %s", username, ip)
 
     # ── 前端查询接口 ──────────────────────────────────────────────────
 

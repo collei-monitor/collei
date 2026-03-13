@@ -75,12 +75,14 @@ class AlertRuleCreate(BaseModel):
     """创建告警规则."""
     name: str = Field(..., min_length=1, max_length=128)
     metric: str = Field(..., min_length=1,
-                        description="监控指标: cpu, ram, offline, traffic_out 等")
+                        description="监控指标: cpu, ram, offline, traffic_out, expiry, traffic_percent, login 等")
     condition: str = Field(..., description="触发条件: >, <, ==")
     threshold: float = Field(..., description="阈值")
     duration: int = Field(60, ge=0, description="持续时间阈值(秒)")
     enabled: int = Field(0, ge=0, le=1)
     notify_recovery: int = Field(0, ge=0, le=1, description="是否启用恢复通知")
+    custom_message: str | None = Field(None, description="自定义通知消息模板，支持变量: {server_name} {server_uuid} {metric} {value} {threshold} {rule_name} {condition}")
+    traffic_notify_step: float | None = Field(None, ge=1, le=100, description="流量百分比梯度通知步长(%), 如10表示每超过10%通知一次")
 
 
 class AlertRuleUpdate(BaseModel):
@@ -92,6 +94,8 @@ class AlertRuleUpdate(BaseModel):
     duration: int | None = Field(None, ge=0)
     enabled: int | None = Field(None, ge=0, le=1)
     notify_recovery: int | None = Field(None, ge=0, le=1)
+    custom_message: str | None = Field(None)
+    traffic_notify_step: float | None = Field(None, ge=1, le=100)
 
 
 class AlertRuleRead(BaseModel):
@@ -103,6 +107,8 @@ class AlertRuleRead(BaseModel):
     duration: int = 60
     enabled: int = 0
     notify_recovery: int = 0
+    custom_message: str | None = None
+    traffic_notify_step: float | None = None
     created_at: int | None = None
 
     model_config = {"from_attributes": True}
