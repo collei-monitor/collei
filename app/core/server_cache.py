@@ -320,11 +320,13 @@ class ServerCache:
             for k, v in info.items():
                 if k in existing:
                     existing[k] = v
+        self._nodes_dirty = True
 
     def remove_billing_rule(self, uuid: str) -> None:
         """移除计费规则缓存."""
         self._billing_rules.pop(uuid, None)
         self._cycle_traffic.pop(uuid, None)
+        self._nodes_dirty = True
 
     def get_billing_rule(self, uuid: str) -> dict[str, Any] | None:
         """获取缓存中的计费规则."""
@@ -448,6 +450,7 @@ class ServerCache:
                 "last_online": st.get("last_online"),
                 "boot_time": st.get("boot_time"),
                 "groups": groups,
+                "billing": self.build_billing_brief(uuid),
             })
 
         # 构建分组列表（含 server_uuids）
@@ -515,7 +518,6 @@ class ServerCache:
                     "total_flow_in": st.get("total_flow_in"),
                 },
                 "load": dict(ld) if ld else None,
-                "billing": self.build_billing_brief(uuid),
             }
 
         return {
