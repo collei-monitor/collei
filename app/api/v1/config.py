@@ -38,6 +38,7 @@ _WRITABLE_KEYS = {
     "offline_check_interval",
     "load_retain_seconds",
     "disputed_territory",
+    "network_status_retain_hours",
 }
 
 # 统一地区标识的合法值

@@ -281,6 +281,53 @@ async def get_network_status_by_server(
     return result.scalars().all()
 
 
+async def get_network_status_by_server_grouped(
+    db: AsyncSession,
+    server_uuid: str,
+    *,
+    start_time: int | None = None,
+    end_time: int | None = None,
+) -> dict[int, list[NetworkStatus]]:
+    """获取某个节点的所有探测结果，按 target_id 分组.
+
+    数据保留由后台任务根据 network_status_retain_hours 配置自动清理，
+    此处直接返回时间范围内的全部记录。
+
+    Returns:
+        {target_id: [NetworkStatus, ...], ...}
+    """
+    # 先查该节点涉及的所有 target_id
+    tid_stmt = (
+        select(NetworkStatus.target_id)
+        .where(NetworkStatus.server_uuid == server_uuid)
+        .distinct()
+    )
+    if start_time is not None:
+        tid_stmt = tid_stmt.where(NetworkStatus.time >= start_time)
+    if end_time is not None:
+        tid_stmt = tid_stmt.where(NetworkStatus.time <= end_time)
+    tids = (await db.execute(tid_stmt)).scalars().all()
+
+    grouped: dict[int, list[NetworkStatus]] = {}
+    for tid in tids:
+        stmt = (
+            select(NetworkStatus)
+            .where(
+                NetworkStatus.server_uuid == server_uuid,
+                NetworkStatus.target_id == tid,
+            )
+        )
+        if start_time is not None:
+            stmt = stmt.where(NetworkStatus.time >= start_time)
+        if end_time is not None:
+            stmt = stmt.where(NetworkStatus.time <= end_time)
+        stmt = stmt.order_by(NetworkStatus.time.desc())
+        rows = (await db.execute(stmt)).scalars().all()
+        if rows:
+            grouped[tid] = list(rows)
+    return grouped
+
+
 async def get_latest_status_per_server(
     db: AsyncSession,
     target_id: int,

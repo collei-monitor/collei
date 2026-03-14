@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_optional_user
 from app.crud import clients as crud
 from app.crud import monitoring as crud_monitoring
+from app.crud import network as crud_network
 from app.db.session import get_async_session
 from app.models.auth import User
 from app.schemas.agent import LoadNowRead
@@ -24,6 +25,9 @@ from app.schemas.clients import (
     GroupWithServersRead,
     ServerPublicBrief,
 )
+from app.schemas.network import NetworkStatusRead, NetworkTargetRead
+
+from typing import Any
 
 router = APIRouter()
 
@@ -127,3 +131,62 @@ async def get_server_load_public(
             db, uuid, start_time=now - range * 3600, end_time=now,
         )
     return records
+
+
+@router.get("/public/servers/{uuid}/network")
+async def get_server_network_status_public(
+    uuid: str,
+    range: int | None = Query(default=None, alias="range", description="查询最近 N 小时"),
+    start_time: int | None = Query(default=None, description="查询起始时间戳"),
+    end_time: int | None = Query(default=None, description="查询结束时间戳"),
+    current_user: User | None = Depends(get_optional_user),
+    db: AsyncSession = Depends(get_async_session),
+):
+    """公开获取指定服务器的所有网络探测结果，按目标分组。
+
+    - 未登录：仅允许查询 hidden=0 且 is_approved=1 的服务器。
+    - 已登录：可查询任意服务器。
+
+    查询方式（按优先级）：
+      - start_time + end_time：指定时间段内的所有记录。
+      - range：查询最近 N 小时内的所有记录。
+      - 均不传：返回保留时间内的所有记录。
+    """
+    server = await crud.get_server_by_uuid(db, uuid)
+    if not server:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Server not found")
+    if current_user is None and (server.hidden == 1 or server.is_approved != 1):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Server not found")
+
+    query_start: int | None = start_time
+    query_end: int | None = end_time
+    if query_start is None and query_end is None and range is not None:
+        now = int(time.time())
+        query_start = now - range * 3600
+        query_end = now
+
+    grouped = await crud_network.get_network_status_by_server_grouped(
+        db, uuid,
+        start_time=query_start,
+        end_time=query_end,
+    )
+
+    # 加载目标信息
+    target_ids = list(grouped.keys())
+    targets_map: dict[int, Any] = {}
+    for tid in target_ids:
+        t = await crud_network.get_target(db, tid)
+        if t:
+            targets_map[tid] = t
+
+    result = []
+    for tid, records in grouped.items():
+        target = targets_map.get(tid)
+        result.append({
+            "target": NetworkTargetRead.model_validate(target) if target else None,
+            "records": [NetworkStatusRead.model_validate(r) for r in records],
+        })
+
+    return result

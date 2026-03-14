@@ -70,6 +70,7 @@ _DEFAULT_CONFIGS: dict[str, str] = {
     "offline_check_interval": "2",
     "load_retain_seconds": "80",
     "disputed_territory": "0",
+    "network_status_retain_hours": "24",
 }
 
 

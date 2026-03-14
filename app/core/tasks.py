@@ -22,6 +22,7 @@ from app.core.server_cache import server_cache
 from app.db.session import async_session_factory
 from app.models.clients import ServerStatus, ServerBillingRule
 from app.models.monitoring import LoadNow
+from app.models.network import NetworkStatus
 
 
 class BackgroundTasks:
@@ -35,6 +36,7 @@ class BackgroundTasks:
         self._tasks.append(asyncio.create_task(self._check_offline_servers()))
         self._tasks.append(asyncio.create_task(self._broadcast_snapshot()))
         self._tasks.append(asyncio.create_task(self._purge_old_load()))
+        self._tasks.append(asyncio.create_task(self._purge_old_network_status()))
         self._tasks.append(asyncio.create_task(self._billing_check()))
 
         # 启动告警状态机引擎
@@ -164,7 +166,41 @@ class BackgroundTasks:
             await asyncio.sleep(interval)
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Task 4: 计费管理（自动续期 + 周期流量重算）
+    # Task 4: 网络探测数据清理
+    # ─────────────────────────────────────────────────────────────────────────
+
+    async def _purge_old_network_status(self) -> None:
+        """定期清除过期的 network_status 探测记录.
+
+        保留 network_status_retain_hours 小时内的数据，
+        清理周期 = retain_hours / 2（至少 1 小时）。
+        """
+        while True:
+            interval = 3600  # fallback 1h
+            try:
+                retain_hours = int(
+                    config_cache.get("network_status_retain_hours") or 24,
+                )
+                interval = max(retain_hours * 1800, 3600)  # retain/2, 最少 1h
+                cutoff = int(time.time()) - retain_hours * 3600
+
+                async with async_session_factory() as session:
+                    result = await session.execute(
+                        delete(NetworkStatus).where(NetworkStatus.time < cutoff)
+                    )
+                    deleted = result.rowcount or 0
+                    await session.commit()
+
+                    if deleted:
+                        print(f"🧹 已清理 {deleted} 条过期网络探测记录")
+
+            except Exception as e:
+                print(f"⚠️ 网络探测数据清理任务出错: {e}")
+
+            await asyncio.sleep(interval)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Task 5: 计费管理（自动续期 + 周期流量重算）
     # ─────────────────────────────────────────────────────────────────────────
 
     async def _billing_check(self) -> None:
