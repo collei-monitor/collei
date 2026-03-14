@@ -23,6 +23,13 @@ from app.models.clients import (  # noqa: F401
 # ── Monitoring ──
 from app.models.monitoring import LoadNow, TrafficHourlyStat  # noqa: F401
 
+# ── Network Monitoring ──
+from app.models.network import (  # noqa: F401
+    NetworkStatus,
+    NetworkTarget,
+    NetworkTargetDispatch,
+)
+
 # ── Configs ──
 from app.models.config import Config  # noqa: F401
 

@@ -1,4 +1,4 @@
-"""IP 归属国家查询工具.
+"""IP 归属国家/地区查询工具.
 
 使用本地 MaxMind DB (.mmdb) 文件解析 IP 对应的 ISO 3166-1 alpha-2 国家代码.
 
@@ -33,7 +33,7 @@ DEFAULT_DB = "GeoLite2"
 
 
 def _lookup_sync(ip: str, db_name: str) -> str | None:
-    """同步查询 IP 归属国家代码（在线程池中运行）."""
+    """同步查询 IP 归属国家/地区代码（在线程池中运行）."""
     db_path = DB_FILES.get(db_name)
     if not db_path:
         logger.warning("未知的 IP 数据库: %s", db_name)
@@ -62,21 +62,21 @@ _DISPUTED_REMAP: dict[str, str] = {
 
 
 def remap_region(code: str | None, disputed_territory_enabled: bool) -> str | None:
-    """根据争议地区设置重映射国家代码."""
+    """根据争议地区设置重映射地区代码."""
     if code and disputed_territory_enabled:
         return _DISPUTED_REMAP.get(code, code)
     return code
 
 
-async def lookup_country(ip: str | None, db_name: str = DEFAULT_DB) -> str | None:
-    """异步查询 IP 归属国家代码.
+async def lookup_region(ip: str | None, db_name: str = DEFAULT_DB) -> str | None:
+    """异步查询 IP 归属国家/地区代码.
 
     Args:
         ip: IPv4 或 IPv6 地址字符串，为 None 时直接返回 None.
         db_name: 数据库名称（"GeoLite2" 或 "MaxMind"）.
 
     Returns:
-        ISO 3166-1 alpha-2 国家代码（如 "US"、"CN"），查询失败返回 None.
+        ISO 3166-1 alpha-2 国家/地区代码（如 "US"、"CN"），查询失败返回 None.
     """
     if not ip:
         return None

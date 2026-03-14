@@ -599,6 +599,7 @@ class AlertEngine:
             "running": self._task is not None and not self._task.done(),
             "rules_count": len(self._rules),
             "mappings_count": sum(len(v) for v in self._targets.values()),
+            "channels_count": sum(len(v) for v in self._channels.values()),
             "states_count": len(self._states),
             "firing_count": firing,
             "pending_count": pending,

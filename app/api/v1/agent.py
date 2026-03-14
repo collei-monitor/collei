@@ -14,10 +14,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config_cache import config_cache
-from app.core.geoip import DEFAULT_DB, lookup_country, remap_region
+from app.core.geoip import DEFAULT_DB, lookup_region, remap_region
 from app.core.server_cache import server_cache
 from app.crud import clients as crud_clients
 from app.crud import monitoring as crud_monitoring
+from app.crud import network as crud_network
 from app.db.session import get_async_session
 from app.schemas.agent import (
     AgentRegisterRequest,
@@ -39,11 +40,11 @@ async def _get_config_value(db: AsyncSession, key: str) -> str | None:
     return await crud_config.get_config_value(db, key)
 
 async def _resolve_region(ipv4: str | None, ipv6: str | None, db: AsyncSession) -> str | None:
-    """优先用 IPv4，否则用 IPv6 查询归属国家代码."""
+    """优先用 IPv4，否则用 IPv6 查询归属国家/地区代码."""
     from app.crud import config as crud_config
     db_name = await crud_config.get_config_value(db, "ip_db") or DEFAULT_DB
     ip = ipv4 or ipv6
-    code = await lookup_country(ip, db_name)
+    code = await lookup_region(ip, db_name)
     disputed = config_cache.get("disputed_territory") == "1"
     return remap_region(code, disputed)
 
@@ -79,7 +80,7 @@ async def agent_register(
     # 收集硬件信息
     hardware = body.model_dump(exclude={"reg_token", "name"})
 
-    # 自动解析 IP 归属国家
+    # 自动解析 IP 归属国家/地区
     region = await _resolve_region(body.ipv4, body.ipv6, db)
     if region:
         hardware["region"] = region
@@ -120,7 +121,7 @@ async def agent_verify(
     # 更新硬件信息
     hardware = body.model_dump(exclude={"token"})
 
-    # 自动解析 IP 归属国家
+    # 自动解析 IP 归属国家/地区
     region = await _resolve_region(body.ipv4, body.ipv6, db)
     if region:
         hardware["region"] = region
@@ -139,10 +140,32 @@ async def agent_verify(
     server_snap.update(hardware)  # 覆盖已更新的硬件字段（含解析后的 region）
     server_cache.update_server(server.uuid, server_snap)
 
+    # ── 网络监控：对已批准节点下发最新探测任务 ──
+    network_dispatch_resp: dict | None = None
+    if server.is_approved == 1:
+        from app.api.v1.clients.network import get_current_dispatch_version
+        targets = await crud_network.get_dispatch_targets_for_server(db, server.uuid)
+        current_version = await get_current_dispatch_version(db)
+        network_dispatch_resp = {
+            "version": current_version,
+            "targets": [
+                {
+                    "id": t.id,
+                    "name": t.name,
+                    "host": t.host,
+                    "protocol": t.protocol,
+                    "port": t.port,
+                    "interval": t.interval,
+                }
+                for t in targets
+            ],
+        }
+
     return AgentVerifyResponse(
         uuid=server.uuid,
         token=server.token,  # type: ignore[arg-type]
         is_approved=server.is_approved,
+        network_dispatch=network_dispatch_resp,
     )
 
 
@@ -274,7 +297,40 @@ async def agent_report(
     if load_dict:
         server_cache.update_load(server.uuid, load_dict)
 
+    # ── 网络监控：写入探测结果 + 增量下发 ──
+    network_dispatch_resp: dict | None = None
+
+    # 写入 Agent 上报的探测结果
+    if body.network_data:
+        await crud_network.batch_insert_network_status(
+            db, body.network_data, server_uuid=server.uuid,
+        )
+
+    # 增量下发：对比版本号决定是否返回更新的目标列表
+    from app.api.v1.clients.network import get_current_dispatch_version
+    targets = await crud_network.get_dispatch_targets_for_server(db, server.uuid)
+    current_version = await get_current_dispatch_version(db)
+
+    if body.network_version != current_version:
+        network_dispatch_resp = {
+            "version": current_version,
+            "targets": [
+                {
+                    "id": t.id,
+                    "name": t.name,
+                    "host": t.host,
+                    "protocol": t.protocol,
+                    "port": t.port,
+                    "interval": t.interval,
+                }
+                for t in targets
+            ],
+        }
+    else:
+        network_dispatch_resp = {"version": current_version, "targets": None}
+
     return AgentReportResponse(
         uuid=server.uuid,
         is_approved=server.is_approved,
+        network_dispatch=network_dispatch_resp,
     )

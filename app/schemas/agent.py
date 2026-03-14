@@ -56,6 +56,10 @@ class AgentVerifyResponse(BaseModel):
     uuid: str
     token: str
     is_approved: int
+    network_dispatch: dict | None = Field(
+        None,
+        description="探测任务下发信息：{version, targets} 或 null（未批准时）",
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -111,12 +115,25 @@ class AgentReportRequest(BaseModel):
     # ── 资源使用数据（可选） ──
     load_data: LoadData | None = Field(None, description="实时资源监控数据")
 
+    # ── 网络监控数据（可选） ──
+    network_version: str | None = Field(
+        None, description="Agent 当前持有的探测目标版本哈希",
+    )
+    network_data: list[dict] | None = Field(
+        None,
+        description="探测结果列表: [{target_id, time, median_latency, max_latency, min_latency, packet_loss}]",
+    )
+
 
 class AgentReportResponse(BaseModel):
     """Agent 上报成功响应."""
     uuid: str
     is_approved: int
     received: bool = True
+    network_dispatch: dict | None = Field(
+        None,
+        description="探测任务下发信息：{version, targets} 或 null（无变更）",
+    )
 
 
 class LoadNowRead(BaseModel):

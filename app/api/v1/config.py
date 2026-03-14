@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.core.config_cache import config_cache
-from app.core.geoip import DB_FILES, _DISPUTED_REMAP, list_available_dbs, lookup_country
+from app.core.geoip import DB_FILES, _DISPUTED_REMAP, list_available_dbs, lookup_region
 from app.crud import config as crud_config
 from app.crud.clients import batch_remap_regions
 from app.db.session import get_async_session
@@ -69,7 +69,7 @@ class IpDbTestRequest(BaseModel):
 class IpDbTestResult(BaseModel):
     db_name: str
     ip: str
-    country_code: str | None
+    region_code: str | None
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -140,7 +140,7 @@ async def test_ip_db(
     body: IpDbTestRequest,
     _current_user: User = Depends(get_current_user),
 ):
-    """使用指定的 IP 数据库查询某个 IP 的归属国家代码."""
+    """使用指定的 IP 数据库查询某个 IP 的归属国家/地区代码."""
     if body.db_name not in DB_FILES:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -151,8 +151,8 @@ async def test_ip_db(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Database '{body.db_name}' file not found on server",
         )
-    country_code = await lookup_country(body.ip, body.db_name)
-    return IpDbTestResult(db_name=body.db_name, ip=body.ip, country_code=country_code)
+    region_code = await lookup_region(body.ip, body.db_name)
+    return IpDbTestResult(db_name=body.db_name, ip=body.ip, region_code=region_code)
 
 
 @router.get("/{key}", response_model=ConfigItem)
