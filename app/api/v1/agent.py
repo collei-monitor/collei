@@ -329,8 +329,13 @@ async def agent_report(
     else:
         network_dispatch_resp = {"version": current_version, "targets": None}
 
+    # ── SSH 隧道：按需通知 Agent 建立 / 断开隧道 WS ──
+    from app.core.ssh_manager import ssh_manager
+    ssh_tunnel_resp = ssh_manager.get_ssh_tunnel_response(server.uuid)
+
     return AgentReportResponse(
         uuid=server.uuid,
         is_approved=server.is_approved,
         network_dispatch=network_dispatch_resp,
+        ssh_tunnel=ssh_tunnel_resp,
     )

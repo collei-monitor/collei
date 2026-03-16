@@ -134,6 +134,10 @@ class AgentReportResponse(BaseModel):
         None,
         description="探测任务下发信息：{version, targets} 或 null（无变更）",
     )
+    ssh_tunnel: dict | None = Field(
+        None,
+        description="SSH 隧道指令：{connect: true} 需要建立隧道 WS，{connect: false} 断开隧道 WS，null 维持当前状态",
+    )
 
 
 class LoadNowRead(BaseModel):

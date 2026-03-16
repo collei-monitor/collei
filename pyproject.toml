@@ -19,6 +19,8 @@ dependencies = [
     "pyotp>=2.9",
     "maxminddb>=2.0",
     "aiosmtplib>=5.0",
+    "asyncssh>=2.17",
+    "cryptography>=42.0",
 ]
 
 [project.optional-dependencies]

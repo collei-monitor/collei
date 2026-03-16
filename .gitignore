@@ -49,6 +49,9 @@ venv.bak/
 *.sqlite
 *.sqlite3
 
+# SSH CA 私钥
+data/ssh_ca_key.*
+
 # Alembic 临时文件
 alembic/versions/__pycache__/
 

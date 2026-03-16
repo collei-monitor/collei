@@ -8,6 +8,8 @@ from app.api.v1.clients.monitoring import router as monitoring_router
 from app.api.v1.clients.network import router as network_router
 from app.api.v1.clients.public import router as public_router
 from app.api.v1.clients.servers import router as servers_router
+from app.api.v1.clients.sftp import router as sftp_router
+from app.api.v1.clients.ssh import router as ssh_router
 
 router = APIRouter(prefix="/clients", tags=["clients"])
 
@@ -17,3 +19,5 @@ router.include_router(groups_router)
 router.include_router(monitoring_router)
 router.include_router(billing_router)
 router.include_router(network_router)
+router.include_router(ssh_router)
+router.include_router(sftp_router)

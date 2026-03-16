@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     LOGIN_ATTEMPT_WINDOW: int = 600  # 窗口期（秒）
     LOGIN_2FA_CHALLENGE_EXPIRE_SECONDS: int = 300  # 两阶段登录挑战有效期（秒）
 
+    # ── SSH CA ─────────────────────────────────────────────
+    CA_MASTER_KEY: str = ""  # CA 私钥加密主密钥，为空时从 SECRET_KEY 派生（降级模式）
+    CA_KEY_TTL: int = 300  # CA 私钥内存缓存 TTL（秒），默认 5 分钟
+
     # ── 初始管理员 ────────────────────────────────────────
     DEFAULT_ADMIN_USERNAME: str = "admin"
     DEFAULT_ADMIN_PASSWORD: str = ""  # 为空时由程序随机生成并打印日志
