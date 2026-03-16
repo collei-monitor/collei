@@ -146,9 +146,10 @@ async def get_ssh_ca_public_key():
     from= 等 sshd 限制由 Agent 安装脚本负责拼装。
     公钥本身是公开信息，无需鉴权，便于安装脚本和 Agent 直接获取。
     """
-    from app.core.ca_manager import get_ca_public_key, get_old_ca_public_key
+    from app.core.ca_manager import get_ca_key, get_ca_public_key, get_old_ca_public_key
 
     try:
+        await get_ca_key()  # 确保密钥已初始化（首次部署时自动生成）
         public_key = get_ca_public_key()
     except Exception:
         raise HTTPException(
