@@ -49,6 +49,7 @@ class UserRead(BaseModel):
     created_at: int | None = None
     updated_at: int | None = None
     ws_token: str | None = Field(None, description="WebSocket 连接专用短时效 token（60 秒）")
+    global_registration_token: str | None = None
 
     model_config = {"from_attributes": True}
 

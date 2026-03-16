@@ -35,6 +35,7 @@ def build_server_full_detail(
     return ServerFullDetail(
         uuid=server.uuid,
         name=server.name,
+        token=server.token,
         cpu_name=server.cpu_name,
         virtualization=server.virtualization,
         arch=server.arch,

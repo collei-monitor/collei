@@ -60,7 +60,12 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 # ── 辅助函数 ──────────────────────────────────────────────────────────────────
 
-def _user_to_read(user: User, *, ws_token: str | None = None) -> UserRead:
+def _user_to_read(
+    user: User,
+    *,
+    ws_token: str | None = None,
+    global_registration_token: str | None = None,
+) -> UserRead:
     return UserRead(
         uuid=user.uuid,
         username=user.username,
@@ -69,6 +74,7 @@ def _user_to_read(user: User, *, ws_token: str | None = None) -> UserRead:
         created_at=user.created_at,
         updated_at=user.updated_at,
         ws_token=ws_token,
+        global_registration_token=global_registration_token,
     )
 
 
@@ -310,10 +316,16 @@ async def logout(
 # ── 当前用户 ──────────────────────────────────────────────────────────────────
 
 @router.get("/me", response_model=UserRead)
-async def get_me(current_user: User = Depends(get_current_user)):
+async def get_me(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_session),
+):
     """获取当前登录用户信息，同时颁发 60 秒有效的 WebSocket 临时 token."""
+    from app.crud import config as crud_config
+
     token = create_ws_token(current_user.uuid)
-    return _user_to_read(current_user, ws_token=token)
+    global_reg_token = await crud_config.get_config_value(db, "global_registration_token")
+    return _user_to_read(current_user, ws_token=token, global_registration_token=global_reg_token)
 
 
 @router.put("/me", response_model=UserRead)

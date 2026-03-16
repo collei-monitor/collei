@@ -90,10 +90,11 @@ class ServerBrief(BaseModel):
 
 
 class ServerFullDetail(BaseModel):
-    """服务器完整详情 — 列表展示用，包含所有服务器信息 + 状态 + 分组，不含 token."""
+    """服务器完整详情 — 列表展示用，包含所有服务器信息 + 状态 + 分组."""
     # 基础配置信息
     uuid: str
     name: str
+    token: str | None = None
     cpu_name: str | None = None
     virtualization: str | None = None
     arch: str | None = None
