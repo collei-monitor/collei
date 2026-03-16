@@ -216,6 +216,8 @@ async def _do_ssh_connect(
 
             conn, _ = await asyncssh.create_connection(
                 asyncssh.SSHClient,
+                host='',
+                port=0,
                 sock=sock_ssh,
                 username=session.username,
                 client_keys=[(user_key, cert)],
@@ -293,6 +295,8 @@ async def _do_ssh_connect(
             try:
                 conn, _ = await asyncssh.create_connection(
                     asyncssh.SSHClient,
+                    host='',
+                    port=0,
                     sock=sock_ssh,
                     username=username,
                     password=password,

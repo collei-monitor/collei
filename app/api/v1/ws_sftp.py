@@ -195,6 +195,8 @@ async def _do_sftp_connect(
 
             conn, _ = await asyncssh.create_connection(
                 asyncssh.SSHClient,
+                host='',
+                port=0,
                 sock=sock_ssh,
                 username=session.username,
                 client_keys=[(user_key, cert)],
@@ -258,6 +260,8 @@ async def _do_sftp_connect(
             try:
                 conn, _ = await asyncssh.create_connection(
                     asyncssh.SSHClient,
+                    host='',
+                    port=0,
                     sock=sock_ssh,
                     username=session.username,
                     password=session.password,
@@ -369,6 +373,8 @@ async def _phase3_interactive_auth(
             try:
                 conn, _ = await asyncssh.create_connection(
                     asyncssh.SSHClient,
+                    host='',
+                    port=0,
                     sock=sock_ssh,
                     username=username,
                     password=password,
