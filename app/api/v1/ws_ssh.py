@@ -32,6 +32,26 @@ from app.core.ca_manager import get_ca_public_key  # noqa: E402, F401 (re-export
 
 # ── socketpair 桥接辅助 ──────────────────────────────────────────────────────
 
+def _create_tcp_socketpair() -> tuple[_socket.socket, _socket.socket]:
+    """Create a pair of connected TCP sockets with valid peername.
+
+    Unlike socket.socketpair() (AF_UNIX), these TCP sockets have valid
+    peername info, which asyncssh requires in connection_made().
+    """
+    srv = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+    srv.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(1)
+    port = srv.getsockname()[1]
+
+    client = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+    client.connect(("127.0.0.1", port))
+    server_side, _ = srv.accept()
+    srv.close()
+
+    return client, server_side
+
+
 async def _open_session_bridge(
     session, agent_ws: WebSocket,
 ) -> tuple[_socket.socket, asyncio.Task, asyncio.StreamWriter]:
@@ -42,7 +62,7 @@ async def _open_session_bridge(
     - bridge_task: reads from local socket, sends to Agent WS with session framing
     - bridge_writer: Agent replies are routed here by agent_ssh_tunnel_ws
     """
-    sock_ssh, sock_bridge = _socket.socketpair()
+    sock_ssh, sock_bridge = _create_tcp_socketpair()
     sock_ssh.setblocking(False)
     sock_bridge.setblocking(False)
 
@@ -216,8 +236,6 @@ async def _do_ssh_connect(
 
             conn, _ = await asyncssh.create_connection(
                 asyncssh.SSHClient,
-                host='',
-                port=0,
                 sock=sock_ssh,
                 username=session.username,
                 client_keys=[(user_key, cert)],
@@ -295,8 +313,6 @@ async def _do_ssh_connect(
             try:
                 conn, _ = await asyncssh.create_connection(
                     asyncssh.SSHClient,
-                    host='',
-                    port=0,
                     sock=sock_ssh,
                     username=username,
                     password=password,
