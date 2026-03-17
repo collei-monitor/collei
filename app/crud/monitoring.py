@@ -10,7 +10,7 @@ from typing import Sequence
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.monitoring import LoadNow, TrafficHourlyStat
+from app.models.monitoring import LoadNow, LoadMinute, LoadHour, TrafficHourlyStat
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -131,6 +131,177 @@ async def purge_all_load(
     """清除服务器的所有监控数据."""
     result = await db.execute(
         delete(LoadNow).where(LoadNow.server_uuid == server_uuid)
+    )
+    return result.rowcount or 0
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# LoadMinute — 分钟级降采样数据(默认保留 24h)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_LOAD_FIELDS = [
+    "cpu", "ram", "ram_total", "swap", "swap_total", "load",
+    "disk", "disk_total", "net_in", "net_out", "tcp", "udp", "process",
+]
+
+_AVG_FIELDS = {"cpu", "load"}
+_MAX_FIELDS = {"ram_total", "swap_total", "disk_total"}
+
+
+def _aggregate_records(records: Sequence, ts: int, server_uuid: str) -> dict:
+    """将多条记录聚合为一条: 对 cpu/load 取均值，对 total 类取最大值，其余取均值."""
+    if not records:
+        return {}
+    n = len(records)
+    result: dict = {"server_uuid": server_uuid, "time": ts}
+    for field in _LOAD_FIELDS:
+        values = [getattr(r, field) for r in records if getattr(r, field) is not None]
+        if not values:
+            result[field] = None
+        elif field in _MAX_FIELDS:
+            result[field] = max(values)
+        else:
+            avg = sum(values) / len(values)
+            result[field] = round(avg, 2) if field in _AVG_FIELDS else int(avg)
+    return result
+
+
+async def downsample_to_minute(
+    db: AsyncSession,
+    server_uuid: str,
+    *,
+    window_start: int,
+    window_end: int,
+) -> LoadMinute | None:
+    """将 load_now 中指定时间窗口的记录聚合并写入 load_minute.
+
+    Args:
+        server_uuid: 服务器 UUID
+        window_start: 窗口起始时间戳(含)
+        window_end: 窗口结束时间戳(不含)
+
+    Returns:
+        写入的 LoadMinute 记录，无数据时返回 None
+    """
+    stmt = (
+        select(LoadNow)
+        .where(
+            LoadNow.server_uuid == server_uuid,
+            LoadNow.time >= window_start,
+            LoadNow.time < window_end,
+        )
+    )
+    result = await db.execute(stmt)
+    records = result.scalars().all()
+    if not records:
+        return None
+
+    agg = _aggregate_records(records, window_start, server_uuid)
+    record = LoadMinute(**agg)
+    db.add(record)
+    await db.flush()
+    return record
+
+
+async def downsample_to_hour(
+    db: AsyncSession,
+    server_uuid: str,
+    *,
+    window_start: int,
+    window_end: int,
+) -> LoadHour | None:
+    """将 load_minute 中指定时间窗口的记录聚合并写入 load_hour.
+
+    Args:
+        server_uuid: 服务器 UUID
+        window_start: 窗口起始时间戳(含)，应为 10 分钟整点
+        window_end: 窗口结束时间戳(不含)
+
+    Returns:
+        写入的 LoadHour 记录，无数据时返回 None
+    """
+    stmt = (
+        select(LoadMinute)
+        .where(
+            LoadMinute.server_uuid == server_uuid,
+            LoadMinute.time >= window_start,
+            LoadMinute.time < window_end,
+        )
+    )
+    result = await db.execute(stmt)
+    records = result.scalars().all()
+    if not records:
+        return None
+
+    agg = _aggregate_records(records, window_start, server_uuid)
+    record = LoadHour(**agg)
+    db.add(record)
+    await db.flush()
+    return record
+
+
+async def get_load_minute_range(
+    db: AsyncSession,
+    server_uuid: str,
+    *,
+    start_time: int,
+    end_time: int,
+) -> Sequence[LoadMinute]:
+    """获取 load_minute 表指定时间范围内的数据."""
+    stmt = (
+        select(LoadMinute)
+        .where(
+            LoadMinute.server_uuid == server_uuid,
+            LoadMinute.time >= start_time,
+            LoadMinute.time <= end_time,
+        )
+        .order_by(LoadMinute.time.asc())
+    )
+    result = await db.execute(stmt)
+    return result.scalars().all()
+
+
+async def get_load_hour_range(
+    db: AsyncSession,
+    server_uuid: str,
+    *,
+    start_time: int,
+    end_time: int,
+) -> Sequence[LoadHour]:
+    """获取 load_hour 表指定时间范围内的数据."""
+    stmt = (
+        select(LoadHour)
+        .where(
+            LoadHour.server_uuid == server_uuid,
+            LoadHour.time >= start_time,
+            LoadHour.time <= end_time,
+        )
+        .order_by(LoadHour.time.asc())
+    )
+    result = await db.execute(stmt)
+    return result.scalars().all()
+
+
+async def purge_old_load_minute(
+    db: AsyncSession,
+    *,
+    before: int,
+) -> int:
+    """清理 load_minute 中指定时间之前的数据."""
+    result = await db.execute(
+        delete(LoadMinute).where(LoadMinute.time < before)
+    )
+    return result.rowcount or 0
+
+
+async def purge_old_load_hour(
+    db: AsyncSession,
+    *,
+    before: int,
+) -> int:
+    """清理 load_hour 中指定时间之前的数据."""
+    result = await db.execute(
+        delete(LoadHour).where(LoadHour.time < before)
     )
     return result.rowcount or 0
 

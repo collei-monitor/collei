@@ -197,3 +197,29 @@ class AlertEngineStatus(BaseModel):
     states_count: int
     firing_count: int
     pending_count: int
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Logs (审计日志)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class LogRead(BaseModel):
+    """审计日志条目."""
+    id: int
+    level: str
+    msg_type: str
+    message: str
+    detail: str | None = None
+    source: str | None = None
+    ip: str | None = None
+    user_uuid: str | None = None
+    server_uuid: str | None = None
+    time: int
+
+    model_config = {"from_attributes": True}
+
+
+class LogListResponse(BaseModel):
+    """审计日志分页响应."""
+    items: list[LogRead]
+    total: int

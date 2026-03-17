@@ -59,6 +59,66 @@ class LoadNow(Base):
     process: Mapped[int | None] = mapped_column(Integer)
 
 
+class LoadMinute(Base):
+    """系统资源监控数据（分钟级） — load_now 的降采样结果，默认保留 24 小时.
+
+    复合主键: (server_uuid, time)
+    """
+
+    __tablename__ = "load_minute"
+
+    server_uuid: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("servers.uuid", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    time: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    cpu: Mapped[float | None] = mapped_column(Float)
+    ram: Mapped[int | None] = mapped_column(Integer)
+    ram_total: Mapped[int | None] = mapped_column(Integer)
+    swap: Mapped[int | None] = mapped_column(Integer)
+    swap_total: Mapped[int | None] = mapped_column(Integer)
+    load: Mapped[float | None] = mapped_column(Float)
+    disk: Mapped[int | None] = mapped_column(Integer)
+    disk_total: Mapped[int | None] = mapped_column(Integer)
+    net_in: Mapped[int | None] = mapped_column(Integer)
+    net_out: Mapped[int | None] = mapped_column(Integer)
+    tcp: Mapped[int | None] = mapped_column(Integer)
+    udp: Mapped[int | None] = mapped_column(Integer)
+    process: Mapped[int | None] = mapped_column(Integer)
+
+
+class LoadHour(Base):
+    """系统资源监控数据（10 分钟级） — load_minute 的降采样结果，默认保留 72 小时.
+
+    复合主键: (server_uuid, time)
+    """
+
+    __tablename__ = "load_hour"
+
+    server_uuid: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("servers.uuid", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    time: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    cpu: Mapped[float | None] = mapped_column(Float)
+    ram: Mapped[int | None] = mapped_column(Integer)
+    ram_total: Mapped[int | None] = mapped_column(Integer)
+    swap: Mapped[int | None] = mapped_column(Integer)
+    swap_total: Mapped[int | None] = mapped_column(Integer)
+    load: Mapped[float | None] = mapped_column(Float)
+    disk: Mapped[int | None] = mapped_column(Integer)
+    disk_total: Mapped[int | None] = mapped_column(Integer)
+    net_in: Mapped[int | None] = mapped_column(Integer)
+    net_out: Mapped[int | None] = mapped_column(Integer)
+    tcp: Mapped[int | None] = mapped_column(Integer)
+    udp: Mapped[int | None] = mapped_column(Integer)
+    process: Mapped[int | None] = mapped_column(Integer)
+
+
 class TrafficHourlyStat(Base):
     """流量统计表 — 记录服务器每小时的网络流量总和.
 

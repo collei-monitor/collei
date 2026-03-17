@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -157,5 +159,13 @@ class LoadNowRead(BaseModel):
     tcp: int | None = None
     udp: int | None = None
     process: int | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class LoadDataResponse(BaseModel):
+    """监控数据响应（包裹实时模式的 retain 信息）."""
+    load_retain_seconds: int | None = None
+    data: list[Any] = []
 
     model_config = {"from_attributes": True}

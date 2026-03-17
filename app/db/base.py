@@ -21,7 +21,7 @@ from app.models.clients import (  # noqa: F401
 )
 
 # ── Monitoring ──
-from app.models.monitoring import LoadNow, TrafficHourlyStat  # noqa: F401
+from app.models.monitoring import LoadNow, LoadMinute, LoadHour, TrafficHourlyStat  # noqa: F401
 
 # ── Network Monitoring ──
 from app.models.network import (  # noqa: F401

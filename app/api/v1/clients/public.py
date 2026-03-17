@@ -4,6 +4,7 @@
   GET  /clients/public/servers              获取公开服务器列表（游客过滤 hidden）
   GET  /clients/public/groups               获取分组列表与分组内服务器UUID列表
   GET  /clients/public/servers/{uuid}/load  获取指定服务器的监控数据（游客限制 hidden/is_approved）
+  GET  /clients/public/servers/{uuid}/network 获取指定服务器的网络探测结果（游客限制 hidden/is_approved）
 """
 
 from __future__ import annotations
@@ -14,12 +15,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_optional_user
+from app.core.config_cache import config_cache
 from app.crud import clients as crud
 from app.crud import monitoring as crud_monitoring
 from app.crud import network as crud_network
 from app.db.session import get_async_session
 from app.models.auth import User
-from app.schemas.agent import LoadNowRead
+from app.schemas.agent import LoadDataResponse, LoadNowRead
 from app.schemas.clients import (
     GroupRead,
     GroupWithServersRead,
@@ -99,21 +101,28 @@ async def list_groups_public(
     return result
 
 
-@router.get("/public/servers/{uuid}/load", response_model=list[LoadNowRead])
+@router.get("/public/servers/{uuid}/load", response_model=LoadDataResponse)
 async def get_server_load_public(
     uuid: str,
-    range: int | None = Query(default=None, description="查询范围（小时），不传则返回 load_now 最新数据"),
+    range: int | None = Query(default=None, description="查询范围（小时）"),
+    start_time: int | None = Query(default=None, description="查询起始时间戳"),
+    end_time: int | None = Query(default=None, description="查询结束时间戳"),
     current_user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_async_session),
 ):
-    """公开获取指定服务器的监控数据。
+    """公开获取指定服务器的监控数据.
 
     - 未登录：仅允许查询 hidden=0 且 is_approved=1 的服务器。
     - 已登录：可查询任意服务器。
 
-    查询方式：
-      - 不传 range：返回 load_now 最新数据（约 1 分钟粒度）。
-      - 传入 range（小时）：查询过去 N 小时的数据。
+    查询方式（按优先级）：
+      - start_time + end_time：指定时间段，根据跨度自动选择数据表。
+      - range（小时）：查询过去 N 小时，根据范围自动选择数据表。
+      - 均不传：返回 load_now 实时数据，同时返回 load_retain_seconds。
+
+    数据表选择逻辑：
+      - 跨度 ≤ load_minute_retain_hours → load_minute 表
+      - 跨度 > load_minute_retain_hours → load_hour 表
     """
     server = await crud.get_server_by_uuid(db, uuid)
     if not server:
@@ -123,14 +132,42 @@ async def get_server_load_public(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Server not found")
 
-    if range is None:
-        records = await crud_monitoring.get_load_now(db, uuid)
-    else:
+    minute_retain_hours = int(config_cache.get("load_minute_retain_hours") or 24)
+
+    # 优先级 1: 时间段查询
+    if start_time is not None and end_time is not None:
         now = int(time.time())
-        records = await crud_monitoring.get_load_range(
-            db, uuid, start_time=now - range * 3600, end_time=now,
-        )
-    return records
+        span_hours = (end_time - start_time) / 3600
+        earliest_offset_hours = (now - start_time) / 3600
+        # 如果时间段跨度或最早时间点超出 minute 保留范围，使用 hour 表
+        if span_hours > minute_retain_hours or earliest_offset_hours > minute_retain_hours:
+            data = await crud_monitoring.get_load_hour_range(
+                db, uuid, start_time=start_time, end_time=end_time,
+            )
+        else:
+            data = await crud_monitoring.get_load_minute_range(
+                db, uuid, start_time=start_time, end_time=end_time,
+            )
+        return LoadDataResponse(data=list(data))
+
+    # 优先级 2: 范围查询 (小时)
+    if range is not None:
+        now = int(time.time())
+        query_start = now - range * 3600
+        if range > minute_retain_hours:
+            data = await crud_monitoring.get_load_hour_range(
+                db, uuid, start_time=query_start, end_time=now,
+            )
+        else:
+            data = await crud_monitoring.get_load_minute_range(
+                db, uuid, start_time=query_start, end_time=now,
+            )
+        return LoadDataResponse(data=list(data))
+
+    # 优先级 3: 默认返回 load_now 实时数据，附带 load_retain_seconds
+    retain = int(config_cache.get("load_retain_seconds") or 80)
+    records = await crud_monitoring.get_load_now(db, uuid)
+    return LoadDataResponse(load_retain_seconds=retain, data=list(records))
 
 
 @router.get("/public/servers/{uuid}/network")

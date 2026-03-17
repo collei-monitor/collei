@@ -71,6 +71,9 @@ _DEFAULT_CONFIGS: dict[str, str] = {
     "load_retain_seconds": "80",
     "disputed_territory": "0",
     "network_status_retain_hours": "24",
+    "load_minute_retain_hours": "24",
+    "load_hour_retain_hours": "72",
+    "log_retain_days": "30",
 }
 
 

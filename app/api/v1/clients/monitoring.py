@@ -8,10 +8,13 @@
 
 from __future__ import annotations
 
+import time
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
+from app.core.config_cache import config_cache
 from app.crud import clients as crud
 from app.crud import monitoring as crud_monitoring
 from app.db.session import get_async_session
@@ -50,6 +53,7 @@ async def get_server_status(
 async def get_server_load(
     uuid: str,
     limit: int = 60,
+    range: int | None = Query(default=None, alias="range", description="查询范围（小时）"),
     start_time: int | None = None,
     end_time: int | None = None,
     _current_user: User = Depends(get_current_user),
@@ -57,21 +61,49 @@ async def get_server_load(
 ):
     """获取服务器监控数据.
 
-    支持两种查询方式:
-      - 默认: 最近 N 条（limit 参数，默认 60）
-      - 时间范围: 指定 start_time 和 end_time
+    查询方式（按优先级）:
+      - start_time + end_time：指定时间段，根据跨度自动选择数据表。
+      - range（小时）：查询过去 N 小时，根据范围自动选择数据表。
+      - 默认: 返回 load_now 最近 N 条（limit 参数，默认 60）
+
+    数据表选择逻辑：
+      - 跨度 ≤ load_minute_retain_hours → load_minute 表
+      - 跨度 > load_minute_retain_hours → load_hour 表
     """
     server = await crud.get_server_by_uuid(db, uuid)
     if not server:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Server not found")
 
+    minute_retain_hours = int(config_cache.get("load_minute_retain_hours") or 24)
+
+    # 优先级 1: 时间段查询
     if start_time is not None and end_time is not None:
-        records = await crud_monitoring.get_load_range(
+        now = int(time.time())
+        span_hours = (end_time - start_time) / 3600
+        earliest_offset_hours = (now - start_time) / 3600
+        if span_hours > minute_retain_hours or earliest_offset_hours > minute_retain_hours:
+            return await crud_monitoring.get_load_hour_range(
+                db, uuid, start_time=start_time, end_time=end_time,
+            )
+        return await crud_monitoring.get_load_minute_range(
             db, uuid, start_time=start_time, end_time=end_time,
         )
-    else:
-        records = await crud_monitoring.get_load_now(db, uuid, limit=limit)
+
+    # 优先级 2: 范围查询 (小时)
+    if range is not None:
+        now = int(time.time())
+        query_start = now - range * 3600
+        if range > minute_retain_hours:
+            return await crud_monitoring.get_load_hour_range(
+                db, uuid, start_time=query_start, end_time=now,
+            )
+        return await crud_monitoring.get_load_minute_range(
+            db, uuid, start_time=query_start, end_time=now,
+        )
+
+    # 优先级 3: 默认返回 load_now 最新数据
+    records = await crud_monitoring.get_load_now(db, uuid, limit=limit)
     return records
 
 

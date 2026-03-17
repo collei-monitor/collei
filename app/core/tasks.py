@@ -1,10 +1,16 @@
 """后台任务模块.
 
 管理所有定时任务和后台作业:
-  1. 离线检测 — 基于内存缓存检测超时服务器并标记为离线（启动首次从数据库检测）
+  1. 离线检测 — 基于内存缓存检测超时服务器并标记为离线
   2. 广播快照 — 从内存缓存构建快照推送给 WebSocket 客户端
-  3. 数据清理 — 定期清除过期的 load_now 监控记录（周期 = load_retain_seconds * 2）
-  4. 计费管理 — 自动续期过期服务器、定期重算周期流量
+  3. 数据清理 — 定期清除过期的 load_now 监控记录
+  4. 网络探测数据清理
+  5. load_now → load_minute 降采样
+  6. load_minute → load_hour 降采样
+  7. load_minute 数据清理
+  8. load_hour 数据清理
+  9. 计费管理 — 自动续期过期服务器、定期重算周期流量
+  10. 审计日志清理
 """
 
 from __future__ import annotations
@@ -16,12 +22,13 @@ from datetime import datetime, timezone
 
 from sqlalchemy import update, delete
 
+from app.core.audit import audit
 from app.core.config import settings
 from app.core.config_cache import config_cache
 from app.core.server_cache import server_cache
 from app.db.session import async_session_factory
 from app.models.clients import ServerStatus, ServerBillingRule
-from app.models.monitoring import LoadNow
+from app.models.monitoring import LoadNow, LoadMinute, LoadHour
 from app.models.network import NetworkStatus
 
 
@@ -38,12 +45,18 @@ class BackgroundTasks:
         self._tasks.append(asyncio.create_task(self._purge_old_load()))
         self._tasks.append(asyncio.create_task(self._purge_old_network_status()))
         self._tasks.append(asyncio.create_task(self._billing_check()))
+        self._tasks.append(asyncio.create_task(self._downsample_to_minute()))
+        self._tasks.append(asyncio.create_task(self._downsample_to_hour()))
+        self._tasks.append(asyncio.create_task(self._purge_old_load_minute()))
+        self._tasks.append(asyncio.create_task(self._purge_old_load_hour()))
+        self._tasks.append(asyncio.create_task(self._purge_old_logs()))
 
         # 启动告警状态机引擎
         from app.core.alert_engine import alert_engine
         await alert_engine.start()
 
-        print("✅ 后台任务已启动")
+        await audit.background(
+            msg_type="system", message="后台任务已启动", source="tasks")
 
     async def stop(self) -> None:
         """停止所有后台任务."""
@@ -58,7 +71,8 @@ class BackgroundTasks:
             except asyncio.CancelledError:
                 pass
         self._tasks.clear()
-        print("ℹ️ 后台任务已停止")
+        await audit.background(
+            msg_type="system", message="后台任务已停止", source="tasks")
 
     # ─────────────────────────────────────────────────────────────────────────
     # Task 1: 离线检测
@@ -91,13 +105,21 @@ class BackgroundTasks:
                             .values(status=0)
                         )
                         await session.commit()
-                    print(
-                        f"⚠️ 检测到 {len(offline_uuids)} 台服务器离线: "
-                        f"{offline_uuids}"
+                    await audit.background(
+                        level="warning",
+                        msg_type="server",
+                        message=f"检测到 {len(offline_uuids)} 台服务器离线",
+                        detail=", ".join(offline_uuids),
+                        source="offline_check",
                     )
 
             except Exception as e:
-                print(f"⚠️ 离线检测任务出错: {e}")
+                await audit.error(
+                    msg_type="error",
+                    message="离线检测任务出错",
+                    exc=e,
+                    source="offline_check",
+                )
 
             await asyncio.sleep(interval)
 
@@ -129,7 +151,12 @@ class BackgroundTasks:
                     await ws_manager.broadcast(public_status, full_status)
 
             except Exception as e:
-                print(f"⚠️ 广播快照出错: {e}")
+                await audit.error(
+                    msg_type="error",
+                    message="广播快照出错",
+                    exc=e,
+                    source="broadcast",
+                )
 
             await asyncio.sleep(settings.WS_BROADCAST_INTERVAL)
 
@@ -158,10 +185,19 @@ class BackgroundTasks:
                     await session.commit()
 
                     if deleted:
-                        print(f"🧹 已清理 {deleted} 条过期监控记录")
+                        await audit.background(
+                            msg_type="task",
+                            message=f"已清理 {deleted} 条过期 load_now 记录",
+                            source="purge_load_now",
+                        )
 
             except Exception as e:
-                print(f"⚠️ 数据清理任务出错: {e}")
+                await audit.error(
+                    msg_type="error",
+                    message="load_now 清理任务出错",
+                    exc=e,
+                    source="purge_load_now",
+                )
 
             await asyncio.sleep(interval)
 
@@ -192,15 +228,191 @@ class BackgroundTasks:
                     await session.commit()
 
                     if deleted:
-                        print(f"🧹 已清理 {deleted} 条过期网络探测记录")
+                        await audit.background(
+                            msg_type="task",
+                            message=f"已清理 {deleted} 条过期网络探测记录",
+                            source="purge_network",
+                        )
 
             except Exception as e:
-                print(f"⚠️ 网络探测数据清理任务出错: {e}")
+                await audit.error(
+                    msg_type="error",
+                    message="网络探测数据清理任务出错",
+                    exc=e,
+                    source="purge_network",
+                )
 
             await asyncio.sleep(interval)
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Task 5: 计费管理（自动续期 + 周期流量重算）
+    # Task 5: load_now → load_minute 降采样 (每 60 秒)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    async def _downsample_to_minute(self) -> None:
+        """定期将 load_now 数据降采样到 load_minute.
+
+        每 60 秒执行一次，对上一分钟的 load_now 数据取平均写入 load_minute。
+        时间窗口: 向下取整到分钟边界。
+        """
+        from app.crud import monitoring as crud_monitoring
+
+        await asyncio.sleep(60)  # 启动延迟，等待首批数据
+        while True:
+            try:
+                now = int(time.time())
+                # 上一分钟的窗口
+                window_end = now - (now % 60)
+                window_start = window_end - 60
+
+                server_uuids = list(server_cache._statuses.keys())
+
+                async with async_session_factory() as session:
+                    for uuid in server_uuids:
+                        await crud_monitoring.downsample_to_minute(
+                            session, uuid,
+                            window_start=window_start,
+                            window_end=window_end,
+                        )
+                    await session.commit()
+
+            except Exception as e:
+                await audit.error(
+                    msg_type="error",
+                    message="load_now→load_minute 降采样出错",
+                    exc=e,
+                    source="downsample_minute",
+                )
+
+            await asyncio.sleep(60)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Task 6: load_minute → load_hour 降采样 (每 600 秒)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    async def _downsample_to_hour(self) -> None:
+        """定期将 load_minute 数据降采样到 load_hour.
+
+        每 600 秒 (10 分钟) 执行一次，对上一个 10 分钟窗口的 load_minute 数据聚合写入 load_hour。
+        """
+        from app.crud import monitoring as crud_monitoring
+
+        await asyncio.sleep(120)  # 启动延迟
+        while True:
+            try:
+                now = int(time.time())
+                # 上一个 10 分钟窗口
+                window_end = now - (now % 600)
+                window_start = window_end - 600
+
+                server_uuids = list(server_cache._statuses.keys())
+
+                async with async_session_factory() as session:
+                    for uuid in server_uuids:
+                        await crud_monitoring.downsample_to_hour(
+                            session, uuid,
+                            window_start=window_start,
+                            window_end=window_end,
+                        )
+                    await session.commit()
+
+            except Exception as e:
+                await audit.error(
+                    msg_type="error",
+                    message="load_minute→load_hour 降采样出错",
+                    exc=e,
+                    source="downsample_hour",
+                )
+
+            await asyncio.sleep(600)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Task 7: load_minute 数据清理
+    # ─────────────────────────────────────────────────────────────────────────
+
+    async def _purge_old_load_minute(self) -> None:
+        """定期清除过期的 load_minute 记录.
+
+        保留 load_minute_retain_hours 小时内的数据，默认 24h。
+        清理周期 = retain_hours / 2（至少 10 分钟）。
+        """
+        from app.crud import monitoring as crud_monitoring
+
+        while True:
+            interval = 43200  # fallback 12h
+            try:
+                retain_hours = int(
+                    config_cache.get("load_minute_retain_hours") or 24
+                )
+                interval = max(retain_hours * 1800, 600)
+                cutoff = int(time.time()) - retain_hours * 3600
+
+                async with async_session_factory() as session:
+                    deleted = await crud_monitoring.purge_old_load_minute(
+                        session, before=cutoff
+                    )
+                    await session.commit()
+                    if deleted:
+                        await audit.background(
+                            msg_type="task",
+                            message=f"已清理 {deleted} 条过期 load_minute 记录",
+                            source="purge_load_minute",
+                        )
+
+            except Exception as e:
+                await audit.error(
+                    msg_type="error",
+                    message="load_minute 清理任务出错",
+                    exc=e,
+                    source="purge_load_minute",
+                )
+
+            await asyncio.sleep(interval)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Task 8: load_hour 数据清理
+    # ─────────────────────────────────────────────────────────────────────────
+
+    async def _purge_old_load_hour(self) -> None:
+        """定期清除过期的 load_hour 记录.
+
+        保留 load_hour_retain_hours 小时内的数据，默认 72h。
+        清理周期 = retain_hours / 2（至少 1 小时）。
+        """
+        from app.crud import monitoring as crud_monitoring
+
+        while True:
+            interval = 129600  # fallback 36h
+            try:
+                retain_hours = int(
+                    config_cache.get("load_hour_retain_hours") or 72
+                )
+                interval = max(retain_hours * 1800, 3600)
+                cutoff = int(time.time()) - retain_hours * 3600
+
+                async with async_session_factory() as session:
+                    deleted = await crud_monitoring.purge_old_load_hour(
+                        session, before=cutoff
+                    )
+                    await session.commit()
+                    if deleted:
+                        await audit.background(
+                            msg_type="task",
+                            message=f"已清理 {deleted} 条过期 load_hour 记录",
+                            source="purge_load_hour",
+                        )
+
+            except Exception as e:
+                await audit.error(
+                    msg_type="error",
+                    message="load_hour 清理任务出错",
+                    exc=e,
+                    source="purge_load_hour",
+                )
+
+            await asyncio.sleep(interval)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Task 9: 计费管理（自动续期 + 周期流量重算）
     # ─────────────────────────────────────────────────────────────────────────
 
     async def _billing_check(self) -> None:
@@ -235,16 +447,69 @@ class BackgroundTasks:
                             await session.commit()
                         # 更新缓存
                         rule["expiry_date"] = new_expiry
-                        print(f"🔄 服务器 {uuid} 已自动续期至 {new_expiry}")
+                        await audit.background(
+                            msg_type="billing",
+                            message=f"服务器已自动续期至 {new_expiry}",
+                            source="billing_check",
+                            server_uuid=uuid,
+                        )
 
                 # 从数据库重新计算周期流量
                 async with async_session_factory() as session:
                     await server_cache.recalc_cycle_traffic(session)
 
             except Exception as e:
-                print(f"⚠️ 计费检查任务出错: {e}")
+                await audit.error(
+                    msg_type="error",
+                    message="计费检查任务出错",
+                    exc=e,
+                    source="billing_check",
+                )
 
             await asyncio.sleep(60)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Task 10: 审计日志清理
+    # ─────────────────────────────────────────────────────────────────────────
+
+    async def _purge_old_logs(self) -> None:
+        """定期清除过期的审计日志记录.
+
+        保留 log_retain_days 天内的数据，默认 30 天。
+        清理周期 = retain_days / 2（至少 6 小时）。
+        """
+        from app.crud import notification as crud_notification
+
+        while True:
+            interval = 43200  # fallback 12h
+            try:
+                retain_days = int(
+                    config_cache.get("log_retain_days") or 30
+                )
+                interval = max(retain_days * 43200, 21600)  # retain/2, 最少 6h
+                cutoff = int(time.time()) - retain_days * 86400
+
+                async with async_session_factory() as session:
+                    deleted = await crud_notification.purge_old_logs(
+                        session, before=cutoff
+                    )
+                    await session.commit()
+                    if deleted:
+                        await audit.background(
+                            msg_type="task",
+                            message=f"已清理 {deleted} 条过期审计日志",
+                            source="purge_logs",
+                        )
+
+            except Exception as e:
+                await audit.error(
+                    msg_type="error",
+                    message="审计日志清理任务出错",
+                    exc=e,
+                    source="purge_logs",
+                )
+
+            await asyncio.sleep(interval)
 
     @staticmethod
     def _add_months(timestamp: int, months: int) -> int:

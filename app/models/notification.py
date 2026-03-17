@@ -188,14 +188,39 @@ class AlertHistory(Base):
 # ─── Logs ─────────────────────────────────────────────────────────────────────
 
 class Log(Base):
-    """系统级/安全审计日志记录."""
+    """系统审计日志 — 记录数据变更、后台任务事件、报错等.
+
+    msg_type 分类:
+      - auth       认证事件 (登录/登出/2FA)
+      - server     服务器变更 (创建/删除/审批/上下线)
+      - config     配置变更
+      - alert      告警事件
+      - task       后台任务事件 (启停/清理/降采样)
+      - error      运行时错误
+      - billing    计费事件 (续期/重置)
+      - network    网络探测变更
+      - system     系统级事件 (启动/停止)
+
+    level:
+      - info / warning / error
+    """
 
     __tablename__ = "logs"
 
     id: Mapped[int] = mapped_column(
         Integer, primary_key=True, autoincrement=True)
-    ip: Mapped[str | None] = mapped_column(String)
-    uuid: Mapped[str | None] = mapped_column(String)
-    message: Mapped[str] = mapped_column(Text, nullable=False)
+    level: Mapped[str] = mapped_column(
+        String, nullable=False, server_default=text("'info'"))
     msg_type: Mapped[str] = mapped_column(String, nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    detail: Mapped[str | None] = mapped_column(Text)
+    source: Mapped[str | None] = mapped_column(String)
+    ip: Mapped[str | None] = mapped_column(String)
+    user_uuid: Mapped[str | None] = mapped_column(String)
+    server_uuid: Mapped[str | None] = mapped_column(String)
     time: Mapped[int] = mapped_column(Integer, nullable=False, default=_now)
+
+    __table_args__ = (
+        Index("ix_logs_time", "time"),
+        Index("ix_logs_msg_type", "msg_type"),
+    )

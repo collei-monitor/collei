@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Sequence
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.notification import (
@@ -13,6 +13,7 @@ from app.models.notification import (
     AlertRule,
     AlertRuleChannelLink,
     AlertRuleTarget,
+    Log,
     MessageSenderProvider,
 )
 
@@ -297,6 +298,92 @@ async def create_alert_history(
     db.add(record)
     await db.flush()
     return record
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Logs (审计日志)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def create_log(
+    db: AsyncSession,
+    *,
+    level: str = "info",
+    msg_type: str,
+    message: str,
+    detail: str | None = None,
+    source: str | None = None,
+    ip: str | None = None,
+    user_uuid: str | None = None,
+    server_uuid: str | None = None,
+) -> Log:
+    """写入一条审计日志."""
+    record = Log(
+        level=level,
+        msg_type=msg_type,
+        message=message,
+        detail=detail,
+        source=source,
+        ip=ip,
+        user_uuid=user_uuid,
+        server_uuid=server_uuid,
+    )
+    db.add(record)
+    await db.flush()
+    return record
+
+
+async def get_logs(
+    db: AsyncSession,
+    *,
+    msg_type: str | None = None,
+    level: str | None = None,
+    server_uuid: str | None = None,
+    source: str | None = None,
+    start_time: int | None = None,
+    end_time: int | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> tuple[Sequence[Log], int]:
+    """查询审计日志，支持多维过滤，返回 (records, total_count)."""
+    stmt = select(Log)
+    count_stmt = select(func.count(Log.id))
+
+    if msg_type:
+        stmt = stmt.where(Log.msg_type == msg_type)
+        count_stmt = count_stmt.where(Log.msg_type == msg_type)
+    if level:
+        stmt = stmt.where(Log.level == level)
+        count_stmt = count_stmt.where(Log.level == level)
+    if server_uuid:
+        stmt = stmt.where(Log.server_uuid == server_uuid)
+        count_stmt = count_stmt.where(Log.server_uuid == server_uuid)
+    if source:
+        stmt = stmt.where(Log.source == source)
+        count_stmt = count_stmt.where(Log.source == source)
+    if start_time is not None:
+        stmt = stmt.where(Log.time >= start_time)
+        count_stmt = count_stmt.where(Log.time >= start_time)
+    if end_time is not None:
+        stmt = stmt.where(Log.time <= end_time)
+        count_stmt = count_stmt.where(Log.time <= end_time)
+
+    total = (await db.execute(count_stmt)).scalar() or 0
+
+    stmt = stmt.order_by(Log.time.desc()).limit(limit).offset(offset)
+    result = await db.execute(stmt)
+    return result.scalars().all(), total
+
+
+async def purge_old_logs(
+    db: AsyncSession,
+    *,
+    before: int,
+) -> int:
+    """清理指定时间之前的审计日志."""
+    result = await db.execute(
+        delete(Log).where(Log.time < before)
+    )
+    return result.rowcount or 0
 
 
 async def update_alert_history(

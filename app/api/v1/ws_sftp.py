@@ -203,7 +203,13 @@ async def _do_sftp_connect(
             cert_ok = True
             logger.info("SFTP session %s: certificate auth succeeded", session.session_id)
         except (asyncssh.PermissionDenied, asyncssh.DisconnectError, asyncssh.KeyImportError, OSError) as exc:
-            logger.info("SFTP session %s: certificate auth failed (%s)", session.session_id, exc)
+            logger.warning(
+                "SFTP session %s: certificate auth failed username=%s exc=%s detail=%r",
+                session.session_id,
+                session.username,
+                type(exc).__name__,
+                exc,
+            )
 
         if cert_ok and conn:
             session.conn = conn
