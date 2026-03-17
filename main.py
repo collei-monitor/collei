@@ -9,6 +9,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import HTTPException
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -117,6 +118,7 @@ def create_app() -> FastAPI:
         redoc_url="/redoc" if settings.DEBUG else None,
         lifespan=lifespan,
     )
+    application.add_middleware(GZipMiddleware, minimum_size=1000)
     application.include_router(api_v1_router)
 
     # 托管前端静态资源（SPA）——仅当前端构建产物存在时挂载
