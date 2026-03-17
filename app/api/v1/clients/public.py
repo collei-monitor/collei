@@ -148,7 +148,7 @@ async def get_server_load_public(
             data = await crud_monitoring.get_load_minute_range(
                 db, uuid, start_time=start_time, end_time=end_time,
             )
-        return LoadDataResponse(data=list(data))
+        return LoadDataResponse(data=[LoadNowRead.model_validate(r) for r in data])
 
     # 优先级 2: 范围查询 (小时)
     if range is not None:
@@ -162,12 +162,15 @@ async def get_server_load_public(
             data = await crud_monitoring.get_load_minute_range(
                 db, uuid, start_time=query_start, end_time=now,
             )
-        return LoadDataResponse(data=list(data))
+        return LoadDataResponse(data=[LoadNowRead.model_validate(r) for r in data])
 
     # 优先级 3: 默认返回 load_now 实时数据，附带 load_retain_seconds
     retain = int(config_cache.get("load_retain_seconds") or 80)
     records = await crud_monitoring.get_load_now(db, uuid)
-    return LoadDataResponse(load_retain_seconds=retain, data=list(records))
+    return LoadDataResponse(
+        load_retain_seconds=retain,
+        data=[LoadNowRead.model_validate(r) for r in records],
+    )
 
 
 @router.get("/public/servers/{uuid}/network")

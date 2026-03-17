@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from pydantic import BaseModel, Field
 
 
@@ -166,6 +164,6 @@ class LoadNowRead(BaseModel):
 class LoadDataResponse(BaseModel):
     """监控数据响应（包裹实时模式的 retain 信息）."""
     load_retain_seconds: int | None = None
-    data: list[Any] = []
+    data: list[LoadNowRead] = []
 
     model_config = {"from_attributes": True}

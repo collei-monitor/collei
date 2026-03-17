@@ -83,24 +83,28 @@ async def get_server_load(
         span_hours = (end_time - start_time) / 3600
         earliest_offset_hours = (now - start_time) / 3600
         if span_hours > minute_retain_hours or earliest_offset_hours > minute_retain_hours:
-            return await crud_monitoring.get_load_hour_range(
+            data = await crud_monitoring.get_load_hour_range(
                 db, uuid, start_time=start_time, end_time=end_time,
             )
-        return await crud_monitoring.get_load_minute_range(
-            db, uuid, start_time=start_time, end_time=end_time,
-        )
+        else:
+            data = await crud_monitoring.get_load_minute_range(
+                db, uuid, start_time=start_time, end_time=end_time,
+            )
+        return [LoadNowRead.model_validate(r) for r in data]
 
     # 优先级 2: 范围查询 (小时)
     if range is not None:
         now = int(time.time())
         query_start = now - range * 3600
         if range > minute_retain_hours:
-            return await crud_monitoring.get_load_hour_range(
+            data = await crud_monitoring.get_load_hour_range(
                 db, uuid, start_time=query_start, end_time=now,
             )
-        return await crud_monitoring.get_load_minute_range(
-            db, uuid, start_time=query_start, end_time=now,
-        )
+        else:
+            data = await crud_monitoring.get_load_minute_range(
+                db, uuid, start_time=query_start, end_time=now,
+            )
+        return [LoadNowRead.model_validate(r) for r in data]
 
     # 优先级 3: 默认返回 load_now 最新数据
     records = await crud_monitoring.get_load_now(db, uuid, limit=limit)

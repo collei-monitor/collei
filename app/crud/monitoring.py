@@ -235,7 +235,7 @@ async def downsample_to_hour(
 
     agg = _aggregate_records(records, window_start, server_uuid)
     record = LoadHour(**agg)
-    db.add(record)
+    record = await db.merge(record)
     await db.flush()
     return record
 
