@@ -16,53 +16,59 @@ depends_on = None
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    existing_tables = inspector.get_table_names()
+
     # ── load_minute ──
-    op.create_table(
-        "load_minute",
-        sa.Column(
-            "server_uuid", sa.String(),
-            sa.ForeignKey("servers.uuid", ondelete="CASCADE"),
-            primary_key=True,
-        ),
-        sa.Column("time", sa.Integer(), primary_key=True),
-        sa.Column("cpu", sa.Float(), nullable=True),
-        sa.Column("ram", sa.Integer(), nullable=True),
-        sa.Column("ram_total", sa.Integer(), nullable=True),
-        sa.Column("swap", sa.Integer(), nullable=True),
-        sa.Column("swap_total", sa.Integer(), nullable=True),
-        sa.Column("load", sa.Float(), nullable=True),
-        sa.Column("disk", sa.Integer(), nullable=True),
-        sa.Column("disk_total", sa.Integer(), nullable=True),
-        sa.Column("net_in", sa.Integer(), nullable=True),
-        sa.Column("net_out", sa.Integer(), nullable=True),
-        sa.Column("tcp", sa.Integer(), nullable=True),
-        sa.Column("udp", sa.Integer(), nullable=True),
-        sa.Column("process", sa.Integer(), nullable=True),
-    )
+    if "load_minute" not in existing_tables:
+        op.create_table(
+            "load_minute",
+            sa.Column(
+                "server_uuid", sa.String(),
+                sa.ForeignKey("servers.uuid", ondelete="CASCADE"),
+                primary_key=True,
+            ),
+            sa.Column("time", sa.Integer(), primary_key=True),
+            sa.Column("cpu", sa.Float(), nullable=True),
+            sa.Column("ram", sa.Integer(), nullable=True),
+            sa.Column("ram_total", sa.Integer(), nullable=True),
+            sa.Column("swap", sa.Integer(), nullable=True),
+            sa.Column("swap_total", sa.Integer(), nullable=True),
+            sa.Column("load", sa.Float(), nullable=True),
+            sa.Column("disk", sa.Integer(), nullable=True),
+            sa.Column("disk_total", sa.Integer(), nullable=True),
+            sa.Column("net_in", sa.Integer(), nullable=True),
+            sa.Column("net_out", sa.Integer(), nullable=True),
+            sa.Column("tcp", sa.Integer(), nullable=True),
+            sa.Column("udp", sa.Integer(), nullable=True),
+            sa.Column("process", sa.Integer(), nullable=True),
+        )
 
     # ── load_hour ──
-    op.create_table(
-        "load_hour",
-        sa.Column(
-            "server_uuid", sa.String(),
-            sa.ForeignKey("servers.uuid", ondelete="CASCADE"),
-            primary_key=True,
-        ),
-        sa.Column("time", sa.Integer(), primary_key=True),
-        sa.Column("cpu", sa.Float(), nullable=True),
-        sa.Column("ram", sa.Integer(), nullable=True),
-        sa.Column("ram_total", sa.Integer(), nullable=True),
-        sa.Column("swap", sa.Integer(), nullable=True),
-        sa.Column("swap_total", sa.Integer(), nullable=True),
-        sa.Column("load", sa.Float(), nullable=True),
-        sa.Column("disk", sa.Integer(), nullable=True),
-        sa.Column("disk_total", sa.Integer(), nullable=True),
-        sa.Column("net_in", sa.Integer(), nullable=True),
-        sa.Column("net_out", sa.Integer(), nullable=True),
-        sa.Column("tcp", sa.Integer(), nullable=True),
-        sa.Column("udp", sa.Integer(), nullable=True),
-        sa.Column("process", sa.Integer(), nullable=True),
-    )
+    if "load_hour" not in existing_tables:
+        op.create_table(
+            "load_hour",
+            sa.Column(
+                "server_uuid", sa.String(),
+                sa.ForeignKey("servers.uuid", ondelete="CASCADE"),
+                primary_key=True,
+            ),
+            sa.Column("time", sa.Integer(), primary_key=True),
+            sa.Column("cpu", sa.Float(), nullable=True),
+            sa.Column("ram", sa.Integer(), nullable=True),
+            sa.Column("ram_total", sa.Integer(), nullable=True),
+            sa.Column("swap", sa.Integer(), nullable=True),
+            sa.Column("swap_total", sa.Integer(), nullable=True),
+            sa.Column("load", sa.Float(), nullable=True),
+            sa.Column("disk", sa.Integer(), nullable=True),
+            sa.Column("disk_total", sa.Integer(), nullable=True),
+            sa.Column("net_in", sa.Integer(), nullable=True),
+            sa.Column("net_out", sa.Integer(), nullable=True),
+            sa.Column("tcp", sa.Integer(), nullable=True),
+            sa.Column("udp", sa.Integer(), nullable=True),
+            sa.Column("process", sa.Integer(), nullable=True),
+        )
 
 
 def downgrade() -> None:
