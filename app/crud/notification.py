@@ -141,9 +141,12 @@ async def update_rule(
 
 
 async def delete_rule(db: AsyncSession, rule_id: int) -> bool:
-    result = await db.execute(
-        delete(AlertRule).where(AlertRule.id == rule_id))
-    return (result.rowcount or 0) > 0
+    rule = await db.get(AlertRule, rule_id)
+    if not rule:
+        return False
+    await db.delete(rule)
+    await db.flush()
+    return True
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

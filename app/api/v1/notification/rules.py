@@ -57,6 +57,7 @@ async def create_rule(
 ):
     """创建告警规则."""
     result = await crud.create_rule(db, **body.model_dump())
+    await db.commit()
     await _reload_engine()
     return result
 
@@ -103,6 +104,7 @@ async def update_rule(
             detail="No fields to update",
         )
     result = await crud.update_rule(db, rule_id, **data)
+    await db.commit()
     await _reload_engine()
     return result
 
@@ -118,6 +120,7 @@ async def delete_rule(
     if not deleted:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found")
+    await db.commit()
     await _reload_engine()
     return MessageResponse(message="Rule deleted")
 
@@ -168,6 +171,7 @@ async def add_rule_targets(
         targets=[t.model_dump() for t in body.targets],
     )
     if created:
+        await db.commit()
         await _reload_engine()
     return created
 
@@ -195,6 +199,7 @@ async def delete_rule_targets(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No matching targets found",
         )
+    await db.commit()
     await _reload_engine()
     return MessageResponse(message=f"{count} target(s) deleted")
 
@@ -242,5 +247,6 @@ async def set_rule_channels(
         rule_id=rule_id,
         channel_ids=body.channel_ids,
     )
+    await db.commit()
     await _reload_engine()
     return result
