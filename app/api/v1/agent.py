@@ -1,9 +1,10 @@
 """Agent 端 API 路由（无需面板登录认证）.
 
 端点:
-  POST  /agent/register   Agent 自动注册（全局密钥）
-  POST  /agent/verify     Agent 验证 token（被动注册）
-  POST  /agent/report     Agent 混合上报（硬件 + 监控数据）
+  POST  /agent/register        Agent 自动注册（全局密钥）
+  POST  /agent/verify           Agent 验证 token（被动注册）
+  POST  /agent/report           Agent 混合上报（硬件 + 监控数据）
+  POST  /agent/tasks/report     Agent 上报任务执行结果
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from app.core.server_cache import server_cache
 from app.crud import clients as crud_clients
 from app.crud import monitoring as crud_monitoring
 from app.crud import network as crud_network
+from app.crud import task as crud_task
 from app.db.session import get_async_session
 from app.schemas.agent import (
     AgentRegisterRequest,
@@ -27,6 +29,12 @@ from app.schemas.agent import (
     AgentReportResponse,
     AgentVerifyRequest,
     AgentVerifyResponse,
+)
+from app.schemas.task import (
+    AgentPendingTask,
+    AgentTaskReport,
+    MessageResponse,
+    TaskExecutionRead,
 )
 
 router = APIRouter(prefix="/agent", tags=["agent"])
@@ -333,9 +341,79 @@ async def agent_report(
     from app.core.ssh_manager import ssh_manager
     ssh_tunnel_resp = ssh_manager.get_ssh_tunnel_response(server.uuid)
 
+    # ── 待执行任务：查询并下发给 Agent ──
+    pending_tasks_resp: list[dict] | None = None
+    pending_execs = await crud_task.get_pending_executions_for_agent(db, server.uuid)
+    if pending_execs:
+        pending_tasks_resp = []
+        for ex in pending_execs:
+            await crud_task.mark_execution_dispatched(db, ex.id)
+            pending_tasks_resp.append({
+                "execution_id": ex.id,
+                "task_id": ex.task_id,
+                "type": ex.task.type,
+                "payload": ex.task.payload,
+                "timeout_sec": ex.task.timeout_sec,
+            })
+
     return AgentReportResponse(
         uuid=server.uuid,
         is_approved=server.is_approved,
         network_dispatch=network_dispatch_resp,
         ssh_tunnel=ssh_tunnel_resp,
+        pending_tasks=pending_tasks_resp,
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Agent 任务执行结果上报
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.post("/tasks/report", response_model=MessageResponse)
+async def agent_task_report(
+    body: AgentTaskReport,
+    db: AsyncSession = Depends(get_async_session),
+):
+    """Agent 上报任务执行结果.
+
+    流程:
+      1. 根据 execution_id 查找执行记录
+      2. 校验状态流转合法性（sent/running → running/success/failed/timeout）
+      3. 更新执行状态、退出码、完成时间
+      4. 写入 / 追加终端输出日志
+    """
+    execution = await crud_task.get_execution(db, body.execution_id)
+    if not execution:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Execution not found",
+        )
+
+    # 校验状态流转
+    allowed_transitions = {
+        "sent": {"running", "success", "failed", "timeout"},
+        "running": {"running", "success", "failed", "timeout"},
+    }
+    allowed = allowed_transitions.get(execution.status, set())
+    if body.status not in allowed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot transition from '{execution.status}' to '{body.status}'",
+        )
+
+    now = int(time.time())
+    completed_at = now if body.status in ("success", "failed", "timeout") else None
+
+    await crud_task.update_execution_status(
+        db,
+        body.execution_id,
+        status=body.status,
+        exit_code=body.exit_code,
+        completed_at=completed_at,
+    )
+
+    if body.output is not None:
+        await crud_task.upsert_execution_log(db, body.execution_id, body.output)
+
+    return MessageResponse(message="Task result received")
+

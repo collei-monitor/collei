@@ -33,6 +33,9 @@ from app.models.network import (  # noqa: F401
 # ── Configs ──
 from app.models.config import Config  # noqa: F401
 
+# ── Command Tasks ──
+from app.models.task import Task, TaskExecution, TaskExecutionLog  # noqa: F401
+
 # ── Notification & Alerts ──
 from app.models.notification import (  # noqa: F401
     AlertChannel,

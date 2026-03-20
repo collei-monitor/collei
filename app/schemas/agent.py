@@ -138,6 +138,10 @@ class AgentReportResponse(BaseModel):
         None,
         description="SSH 隧道指令：{connect: true} 需要建立隧道 WS，{connect: false} 断开隧道 WS，null 维持当前状态",
     )
+    pending_tasks: list[dict] | None = Field(
+        None,
+        description="待执行任务列表：[{execution_id, task_id, type, payload, timeout_sec}]，null 表示无待执行任务",
+    )
 
 
 class LoadNowRead(BaseModel):
