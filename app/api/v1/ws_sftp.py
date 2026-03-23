@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
+import posixpath
 import stat
 import time
 
@@ -30,6 +30,10 @@ MAX_UPLOAD_SIZE = 100 * 1024 * 1024
 DOWNLOAD_CHUNK_SIZE = 65536
 # 上传进度推送间隔（每 256 KB 推送一次）
 UPLOAD_PROGRESS_INTERVAL = 256 * 1024
+# 文本查看大小限制（10 MB）
+MAX_TEXT_READ_SIZE = 10 * 1024 * 1024
+# 文本写入大小限制（10 MB）
+MAX_TEXT_WRITE_SIZE = 10 * 1024 * 1024
 
 
 def _format_permissions(mode: int) -> str:
@@ -70,11 +74,12 @@ async def _build_entry(
     # 如果是符号链接，读取目标路径
     if entry["type"] == "link":
         try:
-            target = await sftp.readlink(os.path.join(parent, name))
+            remote_path = posixpath.join(parent or ".", name)
+            target = await sftp.readlink(remote_path)
             entry["link_target"] = target
             # 获取链接目标的真实属性来判断原始类型
             try:
-                real_attrs = await sftp.stat(os.path.join(parent, name))
+                real_attrs = await sftp.stat(remote_path)
                 if real_attrs.permissions is not None and stat.S_ISDIR(real_attrs.permissions):
                     entry["type"] = "dir"
             except (asyncssh.SFTPError, OSError):
@@ -105,9 +110,9 @@ async def frontend_sftp_ws(
     """前端 SFTP WebSocket.
 
     协议:
-      下行: ready / auth_required / ls / stat / download_start / download_end /
-            upload_progress / ok / error / closed / pong
-      上行: auth / ls / stat / download / upload / mkdir / rm / rename /
+        下行: ready / auth_required / ls / stat / cat / download_start / download_end /
+            upload_ready / upload_progress / ok / error / closed / pong
+        上行: auth / ls / stat / cat / download / upload / write / mkdir / rm / rename /
             close / ping / (binary: 上传分块)
     """
     if not token or not decode_ws_token(token):
@@ -443,66 +448,83 @@ async def _sftp_message_loop(
     sftp: asyncssh.SFTPClient,
 ) -> None:
     """SFTP 文件操作消息循环."""
-    while True:
-        raw = await user_ws.receive()
-        msg_type = raw.get("type", "")
+    try:
+        while True:
+            raw = await user_ws.receive()
+            msg_type = raw.get("type", "")
 
-        if msg_type == "websocket.disconnect":
-            break
-
-        # Binary 帧 → 上传分块数据
-        if "bytes" in raw and raw["bytes"]:
-            session.touch()
-            await _handle_upload_chunk(user_ws, session, sftp, raw["bytes"])
-            continue
-
-        # JSON 帧 → 文件操作
-        text = raw.get("text")
-        if not text:
-            continue
-
-        try:
-            msg = json.loads(text)
-        except (json.JSONDecodeError, TypeError):
-            continue
-
-        action = msg.get("action")
-        rid = msg.get("request_id")
-        session.touch()
-
-        try:
-            if action == "ls":
-                await _handle_ls(user_ws, sftp, rid, msg.get("path", "."))
-            elif action == "stat":
-                await _handle_stat(user_ws, sftp, rid, msg.get("path", "."))
-            elif action == "download":
-                await _handle_download(user_ws, sftp, session, rid, msg.get("path", ""))
-            elif action == "upload":
-                await _handle_upload_start(user_ws, session, sftp, msg, rid)
-            elif action == "mkdir":
-                await _handle_mkdir(user_ws, sftp, rid, msg.get("path", ""))
-            elif action == "rm":
-                await _handle_rm(user_ws, sftp, rid, msg.get("path", ""), msg.get("recursive", False))
-            elif action == "rename":
-                await _handle_rename(user_ws, sftp, rid, msg.get("old_path", ""), msg.get("new_path", ""))
-            elif action == "close":
-                await user_ws.send_json({"type": "closed", "reason": "user_close"})
+            if msg_type == "websocket.disconnect":
                 break
-            elif action == "ping":
-                await user_ws.send_json({"type": "pong", "timestamp": int(time.time())})
-            else:
+
+            # Binary 帧 → 上传分块数据
+            if "bytes" in raw and raw["bytes"]:
+                session.touch()
+                await _handle_upload_chunk(user_ws, session, sftp, raw["bytes"])
+                continue
+
+            # JSON 帧 → 文件操作
+            text = raw.get("text")
+            if not text:
+                continue
+
+            try:
+                msg = json.loads(text)
+            except (json.JSONDecodeError, TypeError):
+                continue
+
+            action = msg.get("action")
+            rid = msg.get("request_id")
+            session.touch()
+
+            try:
+                if action == "ls":
+                    await _handle_ls(user_ws, sftp, rid, msg.get("path", "."))
+                elif action == "stat":
+                    await _handle_stat(user_ws, sftp, rid, msg.get("path", "."))
+                elif action == "cat":
+                    await _handle_cat(user_ws, sftp, rid, msg.get("path", ""), msg.get("encoding", "utf-8"))
+                elif action == "download":
+                    await _handle_download(user_ws, sftp, session, rid, msg.get("path", ""))
+                elif action == "upload":
+                    await _handle_upload_start(user_ws, session, sftp, msg, rid)
+                elif action == "write":
+                    await _handle_write(user_ws, sftp, rid, msg.get("path", ""), msg.get("content", ""), msg.get("encoding", "utf-8"))
+                elif action == "mkdir":
+                    await _handle_mkdir(user_ws, sftp, rid, msg.get("path", ""))
+                elif action == "rm":
+                    await _handle_rm(user_ws, sftp, rid, msg.get("path", ""), msg.get("recursive", False))
+                elif action == "rename":
+                    await _handle_rename(user_ws, sftp, rid, msg.get("old_path", ""), msg.get("new_path", ""))
+                elif action == "close":
+                    await user_ws.send_json({"type": "closed", "reason": "user_close"})
+                    break
+                elif action == "ping":
+                    await user_ws.send_json({"type": "pong", "timestamp": int(time.time())})
+                else:
+                    await user_ws.send_json({
+                        "type": "error",
+                        "request_id": rid,
+                        "message": f"Unknown action: {action}",
+                    })
+            except Exception as exc:
+                logger.warning("SFTP action '%s' error: %s", action, exc)
                 await user_ws.send_json({
                     "type": "error",
                     "request_id": rid,
-                    "message": f"Unknown action: {action}",
+                    "message": str(exc),
                 })
-        except Exception as exc:
-            logger.warning("SFTP action '%s' error: %s", action, exc)
-            await user_ws.send_json({
-                "type": "error",
-                "request_id": rid,
-                "message": str(exc),
-            })
+    finally:
+        if session._upload_file is not None:
+            try:
+                await session._upload_file.close()
+            except Exception:
+                pass
+            session._upload_file = None
+            session._upload_remaining = 0
+            session._upload_request_id = ""
+            session._upload_received = 0
+            session._upload_path = ""
+            session._upload_last_progress = 0
 
 
 # ── SFTP 操作处理函数 ────────────────────────────────────────────────────────
@@ -556,11 +578,157 @@ async def _handle_stat(
         return
 
     name = path.rsplit("/", 1)[-1] or path
-    entry = await _build_entry(sftp, os.path.dirname(path), name, attrs)
+    entry = await _build_entry(sftp, posixpath.dirname(path), name, attrs)
     await ws.send_json({
         "type": "stat",
         "request_id": rid,
         "entry": entry,
+    })
+
+
+async def _handle_cat(
+    ws: WebSocket,
+    sftp: asyncssh.SFTPClient,
+    rid: str | None,
+    path: str,
+    encoding: str = "utf-8",
+) -> None:
+    """查看文件内容（文本模式）."""
+    if not path:
+        await ws.send_json({
+            "type": "error", "request_id": rid,
+            "message": "Path is required",
+        })
+        return
+
+    try:
+        attrs = await sftp.stat(path)
+    except asyncssh.SFTPNoSuchFile:
+        await ws.send_json({
+            "type": "error", "request_id": rid,
+            "message": f"File not found: {path}",
+        })
+        return
+
+    # 检查是否为目录
+    if attrs.permissions is not None and stat.S_ISDIR(attrs.permissions):
+        await ws.send_json({
+            "type": "error", "request_id": rid,
+            "message": "Cannot read a directory",
+        })
+        return
+
+    # 检查文件大小（防止读取过大文件）
+    if attrs.size and attrs.size > MAX_TEXT_READ_SIZE:
+        await ws.send_json({
+            "type": "error", "request_id": rid,
+            "message": f"File too large (max {MAX_TEXT_READ_SIZE // (1024 * 1024)} MB)",
+        })
+        return
+
+    try:
+        async with sftp.open(path, "rb") as f:
+            # 二次防护：即使 stat size 不可靠，也限制最大读取长度
+            content_bytes = await f.read(MAX_TEXT_READ_SIZE + 1)
+        if len(content_bytes) > MAX_TEXT_READ_SIZE:
+            await ws.send_json({
+                "type": "error", "request_id": rid,
+                "message": f"File too large (max {MAX_TEXT_READ_SIZE // (1024 * 1024)} MB)",
+            })
+            return
+        try:
+            content = content_bytes.decode(encoding)
+        except UnicodeDecodeError:
+            # 尝试其他编码
+            try:
+                content = content_bytes.decode("gb2312")
+                encoding = "gb2312"
+            except UnicodeDecodeError:
+                content = content_bytes.decode("utf-8", errors="replace")
+                encoding = "utf-8"
+    except asyncssh.SFTPPermissionDenied:
+        await ws.send_json({
+            "type": "error", "request_id": rid,
+            "message": f"Permission denied: {path}",
+        })
+        return
+    except Exception as exc:
+        await ws.send_json({
+            "type": "error", "request_id": rid,
+            "message": f"Read error: {exc}",
+        })
+        return
+
+    await ws.send_json({
+        "type": "cat",
+        "request_id": rid,
+        "path": path,
+        "content": content,
+        "encoding": encoding,
+        "size": len(content_bytes),
+    })
+
+
+async def _handle_write(
+    ws: WebSocket,
+    sftp: asyncssh.SFTPClient,
+    rid: str | None,
+    path: str,
+    content: str,
+    encoding: str = "utf-8",
+) -> None:
+    """编辑保存文件内容."""
+    if not path:
+        await ws.send_json({
+            "type": "error", "request_id": rid,
+            "message": "Path is required",
+        })
+        return
+
+    try:
+        content_bytes = content.encode(encoding)
+    except UnicodeEncodeError as exc:
+        await ws.send_json({
+            "type": "error", "request_id": rid,
+            "message": f"Encoding error: {exc}",
+        })
+        return
+
+    if len(content_bytes) > MAX_TEXT_WRITE_SIZE:
+        await ws.send_json({
+            "type": "error", "request_id": rid,
+            "message": f"Content too large (max {MAX_TEXT_WRITE_SIZE // (1024 * 1024)} MB)",
+        })
+        return
+
+    try:
+        async with sftp.open(path, "wb") as f:
+            await f.write(content_bytes)
+    except asyncssh.SFTPPermissionDenied:
+        await ws.send_json({
+            "type": "error", "request_id": rid,
+            "message": f"Permission denied: {path}",
+        })
+        return
+    except asyncssh.SFTPNoSuchFile:
+        await ws.send_json({
+            "type": "error", "request_id": rid,
+            "message": f"Path not found: {path}",
+        })
+        return
+    except Exception as exc:
+        await ws.send_json({
+            "type": "error", "request_id": rid,
+            "message": f"Write error: {exc}",
+        })
+        return
+
+    await ws.send_json({
+        "type": "ok",
+        "request_id": rid,
+        "message": f"File saved: {path}",
+        "path": path,
+        "size": len(content_bytes),
     })
 
 
@@ -635,7 +803,30 @@ async def _handle_upload_start(
 ) -> None:
     """处理上传开始指令."""
     path = msg.get("path", "")
-    size = msg.get("size", 0)
+    raw_size = msg.get("size", 0)
+
+    if not isinstance(path, str):
+        await ws.send_json({
+            "type": "error", "request_id": rid,
+            "message": "Path must be a string",
+        })
+        return
+
+    try:
+        size = int(raw_size)
+    except (TypeError, ValueError):
+        await ws.send_json({
+            "type": "error", "request_id": rid,
+            "message": "size must be an integer",
+        })
+        return
+
+    if size < 0:
+        await ws.send_json({
+            "type": "error", "request_id": rid,
+            "message": "size must be >= 0",
+        })
+        return
 
     if not path:
         await ws.send_json({
@@ -677,6 +868,12 @@ async def _handle_upload_start(
         session._upload_received = 0
         session._upload_path = path
         session._upload_last_progress = 0
+        await ws.send_json({
+            "type": "upload_ready",
+            "request_id": rid,
+            "path": path,
+            "expected_size": size,
+        })
     except asyncssh.SFTPPermissionDenied:
         await ws.send_json({
             "type": "error", "request_id": rid,
@@ -828,13 +1025,16 @@ async def _rm_recursive(sftp: asyncssh.SFTPClient, path: str) -> None:
     """递归删除目录."""
     items = await sftp.readdir(path)
     for item in items:
-        if item.filename in (".", ".."):
+        raw_name = item.filename
+        if raw_name in (".", "..", b".", b".."):
             continue
-        child = f"{path}/{item.filename}"
+        name: str = raw_name.decode("utf-8", errors="replace") if isinstance(raw_name, (bytes, bytearray)) else str(raw_name)
+        child = posixpath.join(path, name)
         if item.attrs.permissions is not None and stat.S_ISDIR(item.attrs.permissions):
             await _rm_recursive(sftp, child)
         else:
             await sftp.remove(child)
+        await asyncio.sleep(0)
     await sftp.rmdir(path)
 
 
