@@ -297,21 +297,6 @@ async def get_network_status_by_server_grouped(
     Returns:
         {target_id: [NetworkStatus, ...], ...}
     """
-    # 指定 limit 时，按时间倒序取该节点最近 N 条，再按 target_id 分组返回。
-    if limit is not None:
-        stmt = select(NetworkStatus).where(NetworkStatus.server_uuid == server_uuid)
-        if start_time is not None:
-            stmt = stmt.where(NetworkStatus.time >= start_time)
-        if end_time is not None:
-            stmt = stmt.where(NetworkStatus.time <= end_time)
-        stmt = stmt.order_by(NetworkStatus.time.desc()).limit(limit)
-        rows = (await db.execute(stmt)).scalars().all()
-
-        grouped: dict[int, list[NetworkStatus]] = {}
-        for row in rows:
-            grouped.setdefault(row.target_id, []).append(row)
-        return grouped
-
     # 先查该节点涉及的所有 target_id
     tid_stmt = (
         select(NetworkStatus.target_id)
@@ -338,6 +323,8 @@ async def get_network_status_by_server_grouped(
         if end_time is not None:
             stmt = stmt.where(NetworkStatus.time <= end_time)
         stmt = stmt.order_by(NetworkStatus.time.desc())
+        if limit is not None:
+            stmt = stmt.limit(limit)
         rows = (await db.execute(stmt)).scalars().all()
         if rows:
             grouped[tid] = list(rows)

@@ -151,9 +151,8 @@ async def agent_verify(
     # ── 网络监控：对已批准节点下发最新探测任务 ──
     network_dispatch_resp: dict | None = None
     if server.is_approved == 1:
-        from app.api.v1.clients.network import get_current_dispatch_version
         targets = await crud_network.get_dispatch_targets_for_server(db, server.uuid)
-        current_version = await get_current_dispatch_version(db)
+        current_version = crud_network.compute_dispatch_hash(targets)
         network_dispatch_resp = {
             "version": current_version,
             "targets": [
@@ -314,10 +313,9 @@ async def agent_report(
             db, body.network_data, server_uuid=server.uuid,
         )
 
-    # 增量下发：对比版本号决定是否返回更新的目标列表
-    from app.api.v1.clients.network import get_current_dispatch_version
+    # 增量下发：对比该节点目标版本决定是否返回更新的目标列表
     targets = await crud_network.get_dispatch_targets_for_server(db, server.uuid)
-    current_version = await get_current_dispatch_version(db)
+    current_version = crud_network.compute_dispatch_hash(targets)
 
     if body.network_version != current_version:
         network_dispatch_resp = {

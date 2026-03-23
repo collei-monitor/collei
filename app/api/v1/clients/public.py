@@ -190,7 +190,7 @@ async def get_server_network_status_public(
         查询方式（按优先级）：
       - start_time + end_time：指定时间段内的所有记录。
       - range：查询最近 N 小时内的所有记录。
-            - 均不传：返回最近 60 条记录（按时间倒序，再按目标分组）。
+            - 均不传：每个监控目标返回最近 60 条记录（按时间倒序）。
     """
     server = await crud.get_server_by_uuid(db, uuid)
     if not server:
