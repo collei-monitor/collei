@@ -412,18 +412,25 @@ async def purge_old_traffic_hourly(
 # 周期流量计算
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def get_cycle_start_ts(traffic_reset_day: int, billing_cycle_data: int | None = None) -> int:
+def get_cycle_start_ts(traffic_reset_day: int | None, billing_cycle_data: int | None = None) -> int | None:
     """根据流量重置日计算当前周期的起始时间戳.
 
     Args:
         traffic_reset_day: 流量重置日 (0=不重置, -1=每月最后一天, 1-31=指定日)
         billing_cycle_data: 计费周期日（当 traffic_reset_day 为 None 时回退使用）
+
+    Returns:
+        None  — 未配置流量跟踪，调用方应跳过
+        0     — 不重置，从头累计全部流量
+        >0    — 当前周期起始时间戳
     """
     effective_day = traffic_reset_day
     if effective_day is None:
-        effective_day = billing_cycle_data if billing_cycle_data else 0
+        effective_day = billing_cycle_data if billing_cycle_data else None
+    if effective_day is None:
+        return None  # 未配置流量跟踪
     if effective_day == 0:
-        return 0  # 不重置
+        return 0  # 不重置 → 从头累计
 
     now = datetime.now(timezone.utc)
 
@@ -486,7 +493,7 @@ async def get_cycle_traffic(
 ) -> int:
     """计算服务器当前周期的已用流量."""
     cycle_start = get_cycle_start_ts(traffic_reset_day, billing_cycle_data)
-    if cycle_start == 0:
+    if cycle_start is None:
         return 0
 
     stmt = select(
@@ -516,14 +523,10 @@ async def batch_get_cycle_traffic(
     # 按 cycle_start 分组查询以减少 DB 往返
     groups: dict[int, list[dict]] = {}
     for rule in billing_rules:
-        reset_day = rule.get("traffic_reset_day")
-        if reset_day is None:
-            reset_day = rule.get("billing_cycle_data", 0)
-        if reset_day == 0:
-            result[rule["uuid"]] = 0
-            continue
-        cs = get_cycle_start_ts(reset_day, rule.get("billing_cycle_data"))
-        if cs == 0:
+        cs = get_cycle_start_ts(
+            rule.get("traffic_reset_day"), rule.get("billing_cycle_data"),
+        )
+        if cs is None:
             result[rule["uuid"]] = 0
             continue
         groups.setdefault(cs, []).append(rule)
