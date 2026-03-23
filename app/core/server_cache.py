@@ -526,6 +526,7 @@ class ServerCache:
                     "total_flow_in": st.get("total_flow_in"),
                 },
                 "load": dict(ld) if ld else None,
+                "traffic_used": self._cycle_traffic.get(uuid),
             }
 
         return {
