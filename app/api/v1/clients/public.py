@@ -187,10 +187,10 @@ async def get_server_network_status_public(
     - 未登录：仅允许查询 hidden=0 且 is_approved=1 的服务器。
     - 已登录：可查询任意服务器。
 
-    查询方式（按优先级）：
+        查询方式（按优先级）：
       - start_time + end_time：指定时间段内的所有记录。
       - range：查询最近 N 小时内的所有记录。
-      - 均不传：返回保留时间内的所有记录。
+            - 均不传：返回最近 60 条记录（按时间倒序，再按目标分组）。
     """
     server = await crud.get_server_by_uuid(db, uuid)
     if not server:
@@ -202,15 +202,19 @@ async def get_server_network_status_public(
 
     query_start: int | None = start_time
     query_end: int | None = end_time
+    query_limit: int | None = None
     if query_start is None and query_end is None and range is not None:
         now = int(time.time())
         query_start = now - range * 3600
         query_end = now
+    elif query_start is None and query_end is None and range is None:
+        query_limit = 60
 
     grouped = await crud_network.get_network_status_by_server_grouped(
         db, uuid,
         start_time=query_start,
         end_time=query_end,
+        limit=query_limit,
     )
 
     # 加载目标信息
