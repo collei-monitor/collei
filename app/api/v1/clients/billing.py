@@ -4,6 +4,9 @@
   GET     /clients/servers/{uuid}/billing  获取服务器的计费规则
   PUT     /clients/servers/{uuid}/billing  创建或更新服务器的计费规则
   DELETE  /clients/servers/{uuid}/billing  删除服务器的计费规则
+
+注意：流量统计规则（traffic_reset_day, traffic_threshold, accounting_mode）
+已分离到 traffic.py 路由中。
 """
 
 from __future__ import annotations
@@ -58,10 +61,9 @@ async def upsert_billing_rule(
     data = body.model_dump(exclude_unset=True)
     rule = await crud.upsert_billing_rule(db, uuid, **data)
 
-    # 同步缓存
+    # 同步缓存（仅计费字段）
     rule_dict = {f: getattr(rule, f, None) for f in (
         "uuid", "billing_cycle", "billing_cycle_data", "billing_cycle_cost",
-        "traffic_reset_day", "traffic_threshold", "accounting_mode",
         "billing_cycle_cost_code", "expiry_date",
     )}
     server_cache.update_billing_rule(uuid, rule_dict)
