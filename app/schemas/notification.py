@@ -110,6 +110,8 @@ class AlertRuleRead(BaseModel):
     custom_message: str | None = None
     traffic_notify_step: float | None = None
     created_at: int | None = None
+    targets: list["AlertRuleTargetRead"] = []
+    channels: list["AlertRuleChannelRead"] = []
 
     model_config = {"from_attributes": True}
 
@@ -223,3 +225,7 @@ class LogListResponse(BaseModel):
     """审计日志分页响应."""
     items: list[LogRead]
     total: int
+
+
+# 解析 AlertRuleRead 中对 AlertRuleTargetRead/AlertRuleChannelRead 的前向引用
+AlertRuleRead.model_rebuild()

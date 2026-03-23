@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Sequence
 
 from sqlalchemy import delete, func, select, update
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.notification import (
@@ -114,13 +115,19 @@ async def delete_channel(db: AsyncSession, channel_id: int) -> bool:
 
 async def get_rule(db: AsyncSession, rule_id: int) -> AlertRule | None:
     result = await db.execute(
-        select(AlertRule).where(AlertRule.id == rule_id))
+        select(AlertRule)
+        .options(selectinload(AlertRule.targets), selectinload(AlertRule.channels))
+        .where(AlertRule.id == rule_id)
+    )
     return result.scalar_one_or_none()
 
 
 async def get_all_rules(db: AsyncSession) -> Sequence[AlertRule]:
     result = await db.execute(
-        select(AlertRule).order_by(AlertRule.created_at.desc()))
+        select(AlertRule)
+        .options(selectinload(AlertRule.targets), selectinload(AlertRule.channels))
+        .order_by(AlertRule.created_at.desc())
+    )
     return result.scalars().all()
 
 
