@@ -496,7 +496,10 @@ async def _sftp_message_loop(
                 elif action == "rename":
                     await _handle_rename(user_ws, sftp, rid, msg.get("old_path", ""), msg.get("new_path", ""))
                 elif action == "close":
-                    await user_ws.send_json({"type": "closed", "reason": "user_close"})
+                    try:
+                        await user_ws.send_json({"type": "closed", "reason": "user_close"})
+                    except Exception:
+                        pass
                     break
                 elif action == "ping":
                     await user_ws.send_json({"type": "pong", "timestamp": int(time.time())})
@@ -508,11 +511,14 @@ async def _sftp_message_loop(
                     })
             except Exception as exc:
                 logger.warning("SFTP action '%s' error: %s", action, exc)
-                await user_ws.send_json({
-                    "type": "error",
-                    "request_id": rid,
-                    "message": str(exc),
-                })
+                try:
+                    await user_ws.send_json({
+                        "type": "error",
+                        "request_id": rid,
+                        "message": str(exc),
+                    })
+                except Exception:
+                    break
     finally:
         if session._upload_file is not None:
             try:
