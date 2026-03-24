@@ -27,6 +27,7 @@ class ServerUpdate(BaseModel):
     """管理员更新服务器信息."""
     name: str | None = Field(None, min_length=1, max_length=128)
     remark: str | None = None
+    tags: str | None = None
     top: int | None = None
     hidden: int | None = Field(None, ge=0, le=1)
     region: str | None = None
@@ -52,6 +53,7 @@ class ServerRead(BaseModel):
     disk_total: int | None = None
     version: str | None = None
     remark: str | None = None
+    tags: str = '[]'
     top: int = 0
     hidden: int = 0
     is_approved: int = 0
@@ -72,6 +74,7 @@ class ServerBrief(BaseModel):
     ipv4: str | None = None
     ipv6: str | None = None
     version: str | None = None
+    tags: str = '[]'
     top: int = 0
     hidden: int = 0
     is_approved: int = 0
@@ -109,6 +112,7 @@ class ServerFullDetail(BaseModel):
     disk_total: int | None = None
     version: str | None = None
     remark: str | None = None
+    tags: str = '[]'
     top: int = 0
     hidden: int = 0
     is_approved: int = 0
