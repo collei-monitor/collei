@@ -239,10 +239,3 @@ async def get_server_network_status_public(
     return result
 
 
-@router.get("/public/custom")
-async def get_custom_config():
-    """公开获取自定义头部和自定义 Body 配置（无需认证）."""
-    return {
-        "custom_headers": config_cache.get("custom_headers", ""),
-        "custom_body": config_cache.get("custom_body", ""),
-    }
