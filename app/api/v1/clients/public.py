@@ -5,6 +5,7 @@
   GET  /clients/public/groups               获取分组列表与分组内服务器UUID列表
   GET  /clients/public/servers/{uuid}/load  获取指定服务器的监控数据（游客限制 hidden/is_approved）
   GET  /clients/public/servers/{uuid}/network 获取指定服务器的网络探测结果（游客限制 hidden/is_approved）
+  GET  /public/custom             获取公开的自定义头部和自定义 Body 配置
 """
 
 from __future__ import annotations
@@ -132,7 +133,8 @@ async def get_server_load_public(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Server not found")
 
-    minute_retain_hours = int(config_cache.get("load_minute_retain_hours") or 24)
+    minute_retain_hours = int(config_cache.get(
+        "load_minute_retain_hours") or 24)
 
     # 优先级 1: 时间段查询
     if start_time is not None and end_time is not None:
@@ -176,7 +178,8 @@ async def get_server_load_public(
 @router.get("/public/servers/{uuid}/network")
 async def get_server_network_status_public(
     uuid: str,
-    range: int | None = Query(default=None, alias="range", description="查询最近 N 小时"),
+    range: int | None = Query(
+        default=None, alias="range", description="查询最近 N 小时"),
     start_time: int | None = Query(default=None, description="查询起始时间戳"),
     end_time: int | None = Query(default=None, description="查询结束时间戳"),
     current_user: User | None = Depends(get_optional_user),
@@ -234,3 +237,12 @@ async def get_server_network_status_public(
         })
 
     return result
+
+
+@router.get("/public/custom")
+async def get_custom_config():
+    """公开获取自定义头部和自定义 Body 配置（无需认证）."""
+    return {
+        "custom_headers": config_cache.get("custom_headers", ""),
+        "custom_body": config_cache.get("custom_body", ""),
+    }

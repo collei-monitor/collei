@@ -65,6 +65,7 @@ def _user_to_read(
     *,
     ws_token: str | None = None,
     global_registration_token: str | None = None,
+    agent_url: str | None = None,
 ) -> UserRead:
     return UserRead(
         uuid=user.uuid,
@@ -75,6 +76,7 @@ def _user_to_read(
         updated_at=user.updated_at,
         ws_token=ws_token,
         global_registration_token=global_registration_token,
+        agent_url=agent_url,
     )
 
 
@@ -325,7 +327,8 @@ async def get_me(
 
     token = create_ws_token(current_user.uuid)
     global_reg_token = await crud_config.get_config_value(db, "global_registration_token")
-    return _user_to_read(current_user, ws_token=token, global_registration_token=global_reg_token)
+    agent_url = await crud_config.get_config_value(db, "agent_url")
+    return _user_to_read(current_user, ws_token=token, global_registration_token=global_reg_token, agent_url=agent_url)
 
 
 @router.put("/me", response_model=UserRead)

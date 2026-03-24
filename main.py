@@ -75,6 +75,9 @@ _DEFAULT_CONFIGS: dict[str, str] = {
     "load_minute_retain_hours": "24",
     "load_hour_retain_hours": "72",
     "log_retain_days": "30",
+    "agent_url": "",
+    "custom_headers": "",
+    "custom_body": "",
 }
 
 

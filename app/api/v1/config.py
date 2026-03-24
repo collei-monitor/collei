@@ -39,6 +39,9 @@ _WRITABLE_KEYS = {
     "load_retain_seconds",
     "disputed_territory",
     "network_status_retain_hours",
+    "agent_url",
+    "custom_headers",
+    "custom_body",
 }
 
 # 统一地区标识的合法值
