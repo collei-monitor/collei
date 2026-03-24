@@ -122,6 +122,10 @@ async def update_server(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No fields to update",
         )
+    # tags 在 DB 中存储为 JSON 字符串
+    if "tags" in update_data and isinstance(update_data["tags"], list):
+        import json as _json
+        update_data["tags"] = _json.dumps(update_data["tags"], ensure_ascii=False)
     updated = await crud.update_server(db, uuid, **update_data)
     server_cache.update_server(uuid, update_data)
     return updated

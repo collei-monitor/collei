@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+import json
+
+from pydantic import BaseModel, Field, field_validator
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -27,7 +29,8 @@ class ServerUpdate(BaseModel):
     """管理员更新服务器信息."""
     name: str | None = Field(None, min_length=1, max_length=128)
     remark: str | None = None
-    tags: str | None = None
+    tags: list | None = None
+    is_region_locked: int | None = Field(None, ge=0, le=1)
     top: int | None = None
     hidden: int | None = Field(None, ge=0, le=1)
     region: str | None = None
@@ -53,12 +56,23 @@ class ServerRead(BaseModel):
     disk_total: int | None = None
     version: str | None = None
     remark: str | None = None
-    tags: str = '[]'
+    tags: list = Field(default_factory=list)
+    is_region_locked: int = 0
     top: int = 0
     hidden: int = 0
     is_approved: int = 0
     enable_statistics_mode: int = 0
     created_at: int | None = None
+
+    @field_validator('tags', mode='before')
+    @classmethod
+    def parse_tags(cls, v):
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except (ValueError, TypeError):
+                return []
+        return v if v is not None else []
 
     model_config = {"from_attributes": True}
 
@@ -74,12 +88,22 @@ class ServerBrief(BaseModel):
     ipv4: str | None = None
     ipv6: str | None = None
     version: str | None = None
-    tags: str = '[]'
+    tags: list = Field(default_factory=list)
     top: int = 0
     hidden: int = 0
     is_approved: int = 0
     enable_statistics_mode: int = 0
     created_at: int | None = None
+
+    @field_validator('tags', mode='before')
+    @classmethod
+    def parse_tags(cls, v):
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except (ValueError, TypeError):
+                return []
+        return v if v is not None else []
 
     # 内联状态
     status: int = 0
@@ -112,12 +136,23 @@ class ServerFullDetail(BaseModel):
     disk_total: int | None = None
     version: str | None = None
     remark: str | None = None
-    tags: str = '[]'
+    tags: list = Field(default_factory=list)
+    is_region_locked: int = 0
     top: int = 0
     hidden: int = 0
     is_approved: int = 0
     enable_statistics_mode: int = 0
     created_at: int | None = None
+
+    @field_validator('tags', mode='before')
+    @classmethod
+    def parse_tags(cls, v):
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except (ValueError, TypeError):
+                return []
+        return v if v is not None else []
 
     # 服务器运行状态
     status: int = 0

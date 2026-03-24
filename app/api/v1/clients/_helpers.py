@@ -50,6 +50,7 @@ def build_server_full_detail(
         disk_total=server.disk_total,
         version=server.version,
         remark=server.remark,
+        is_region_locked=server.is_region_locked,
         top=server.top,
         hidden=server.hidden,
         is_approved=server.is_approved,

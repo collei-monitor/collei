@@ -131,7 +131,7 @@ async def agent_verify(
 
     # 自动解析 IP 归属国家/地区
     region = await _resolve_region(body.ipv4, body.ipv6, db)
-    if region:
+    if region and server.is_region_locked != 1:
         hardware["region"] = region
 
     await crud_clients.update_server_hardware(db, server.uuid, hardware)
@@ -237,9 +237,16 @@ async def agent_report(
 
     # 当上报中包含 IP 时重新解析 region
     if body.ipv4 is not None or body.ipv6 is not None:
-        region = await _resolve_region(body.ipv4, body.ipv6, db)
-        if region:
-            hardware_fields["region"] = region
+        # 仅在未锁定时更新 region
+        is_locked = getattr(server, "is_region_locked", None)
+        if is_locked is None:
+            # 缓存对象没有该属性，查数据库
+            db_server = await crud_clients.get_server_by_uuid(db, server.uuid)
+            is_locked = db_server.is_region_locked if db_server else 0
+        if is_locked != 1:
+            region = await _resolve_region(body.ipv4, body.ipv6, db)
+            if region:
+                hardware_fields["region"] = region
 
     if hardware_fields:
         await crud_clients.update_server_hardware(

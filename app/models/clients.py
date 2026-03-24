@@ -66,6 +66,8 @@ class Server(Base):
     remark: Mapped[str | None] = mapped_column(Text)
     tags: Mapped[str] = mapped_column(
         Text, default="[]", server_default=text("'[]'"))
+    is_region_locked: Mapped[int] = mapped_column(
+        Integer, default=0, server_default=text("0"))
 
     # ── 前端控制 ─────────────────────────────────────────
     top: Mapped[int] = mapped_column(

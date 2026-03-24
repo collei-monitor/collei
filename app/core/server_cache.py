@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from typing import Any
 
@@ -27,6 +28,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.clients import Group, Server, ServerBillingRule, ServerGroup, ServerStatus
 from app.models.monitoring import LoadNow
+
+
+def _parse_tags(value: str | list | None) -> list:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except (ValueError, TypeError):
+            return []
+    return []
 
 # 广播快照需要的 Server 字段（含 token 用于缓存鉴权）
 _SERVER_FIELDS = (
@@ -455,7 +467,7 @@ class ServerCache:
                 "os": srv.get("os"),
                 "region": srv.get("region"),
                 "top": srv.get("top"),
-                "tags": srv.get("tags", "[]"),
+                "tags": _parse_tags(srv.get("tags", "[]")),
                 "status": st.get("status", 0),
                 "last_online": st.get("last_online"),
                 "boot_time": st.get("boot_time"),
