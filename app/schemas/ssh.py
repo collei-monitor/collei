@@ -18,8 +18,8 @@ class SSHSessionCreateRequest(BaseModel):
         max_length=64,
         description="目标登录用户（证书模式下写入证书 principal）",
     )
-    cols: int = Field(80, ge=10, le=500, description="初始终端列数")
-    rows: int = Field(24, ge=5, le=200, description="初始终端行数")
+    cols: int = Field(80, ge=1, le=500, description="初始终端列数")
+    rows: int = Field(24, ge=1, le=200, description="初始终端行数")
 
 
 class SSHSessionCreateResponse(BaseModel):

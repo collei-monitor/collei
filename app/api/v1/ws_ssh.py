@@ -446,7 +446,10 @@ async def _run_ssh_session(
         for task in pending:
             task.cancel()
 
-        await user_ws.send_json({"type": "closed", "reason": "session_ended"})
+        try:
+            await user_ws.send_json({"type": "closed", "reason": "session_ended"})
+        except Exception:
+            pass
 
     except Exception as exc:
         logger.exception("SSH session bridge error: %s", exc)
