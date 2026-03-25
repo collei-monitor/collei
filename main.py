@@ -186,7 +186,7 @@ def create_app() -> FastAPI:
             static_app = _get_theme_static(active)
             if static_app:
                 try:
-                    response = await static_app.get_response(path, request.scope)
+                    response = await static_app.get_response(clean_path, request.scope)
                     return response
                 except HTTPException:
                     pass
