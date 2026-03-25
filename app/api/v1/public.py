@@ -15,11 +15,12 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import FileResponse
 
+from app.core.config import settings
 from app.core.config_cache import config_cache
 
 router = APIRouter(prefix="/public", tags=["public"])
 
-_DATA_DIR = Path(__file__).resolve().parents[3] / "data"
+_DATA_DIR = Path(settings.DATA_DIR)
 _THEMES_DIR = _DATA_DIR / "themes"
 _MANIFEST_PATH = _THEMES_DIR / "manifest.json"
 

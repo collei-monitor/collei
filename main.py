@@ -25,7 +25,7 @@ from app.db.session import async_session_factory, engine
 import app.db.base  # noqa: F401
 
 FRONTEND_DIST = Path(__file__).parent / "frontend" / "dist"
-DATA_DIR = Path(__file__).parent / "data"
+DATA_DIR = Path(settings.DATA_DIR)
 THEMES_DIR = DATA_DIR / "themes"
 
 logger = logging.getLogger(__name__)

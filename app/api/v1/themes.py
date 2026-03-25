@@ -23,6 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 from pydantic import BaseModel
 
 from app.api.deps import get_current_user
+from app.core.config import settings
 from app.core.config_cache import config_cache
 from app.crud import config as crud_config
 from app.db.session import get_async_session
@@ -31,7 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/config", tags=["config"])
 
-DATA_DIR = Path(__file__).resolve().parents[3] / "data"
+DATA_DIR = Path(settings.DATA_DIR)
 THEMES_DIR = DATA_DIR / "themes"
 MANIFEST_PATH = THEMES_DIR / "manifest.json"
 

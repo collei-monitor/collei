@@ -19,11 +19,11 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.hashes import SHA256
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
-from app.core.config import BASE_DIR, settings
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-_DATA_DIR = BASE_DIR / "data"
+_DATA_DIR = Path(settings.DATA_DIR)
 _ENC_KEY_PATH = _DATA_DIR / "ssh_ca_key.enc"
 _PUB_KEY_PATH = _DATA_DIR / "ssh_ca_key.pub"
 _OLD_PUB_PATH = _DATA_DIR / "ssh_ca_key_old.pub"

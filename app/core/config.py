@@ -31,6 +31,7 @@ class Settings(BaseSettings):
 
     # ── 应用 ──────────────────────────────────────────────
     DEBUG: bool = False
+    DATA_DIR: str = str(BASE_DIR / "data")  # 数据目录（GeoIP / 主题 / Favicon / CA 密钥）
 
     # ── 数据库 ────────────────────────────────────────────
     DATABASE_URL: str = f"sqlite+aiosqlite:///{BASE_DIR / 'collei.db'}"

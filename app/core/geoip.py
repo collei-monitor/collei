@@ -19,8 +19,10 @@ import maxminddb
 
 logger = logging.getLogger(__name__)
 
-# data/ 目录（相对于项目根路径）
-_DATA_DIR = Path(__file__).parent.parent.parent / "data"
+# data/ 目录（通过 COLLEI_DATA_DIR 配置）
+from app.core.config import settings
+
+_DATA_DIR = Path(settings.DATA_DIR)
 
 # 可用数据库文件映射
 DB_FILES: dict[str, Path] = {

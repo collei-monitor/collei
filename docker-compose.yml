@@ -14,6 +14,8 @@ services:
     environment:
       # SQLite 数据库存放在持久化卷中
       - COLLEI_DATABASE_URL=sqlite+aiosqlite:////data/collei.db
+      # 数据目录（主题 / Favicon / GeoIP / CA 密钥）
+      - COLLEI_DATA_DIR=/data
       # 可选配置
       # - COLLEI_SECRET_KEY=KFCFKQXSVW50
       # - COLLEI_DEFAULT_ADMIN_USERNAME=admin
