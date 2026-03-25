@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import mimetypes
 import re
 import secrets
 from contextlib import asynccontextmanager
@@ -30,6 +29,21 @@ DATA_DIR = Path(settings.DATA_DIR)
 THEMES_DIR = DATA_DIR / "themes"
 
 logger = logging.getLogger(__name__)
+
+# 缓存每个主题的 StaticFiles 实例，避免重复创建
+_theme_static_cache: dict[str, StaticFiles] = {}
+
+
+def _get_theme_static(theme_name: str) -> StaticFiles | None:
+    """获取或创建主题的 StaticFiles 实例（带缓存）."""
+    if theme_name in _theme_static_cache:
+        return _theme_static_cache[theme_name]
+    theme_dir = THEMES_DIR / theme_name
+    if theme_dir.is_dir():
+        static = StaticFiles(directory=str(theme_dir))
+        _theme_static_cache[theme_name] = static
+        return static
+    return None
 
 
 @asynccontextmanager
@@ -166,18 +180,16 @@ def create_app() -> FastAPI:
         if not theme_index.exists():
             return await call_next(request)
 
-        # 尝试匹配静态文件
+        # 尝试通过缓存的 StaticFiles 提供主题静态资源
         clean_path = path.lstrip("/")
         if clean_path:
-            candidate = theme_dir / clean_path
-            # 安全检查：防止路径逃逸
-            try:
-                candidate.resolve().relative_to(theme_dir.resolve())
-            except ValueError:
-                return await call_next(request)
-            if candidate.is_file():
-                media_type = mimetypes.guess_type(str(candidate))[0] or "application/octet-stream"
-                return FileResponse(str(candidate), media_type=media_type)
+            static_app = _get_theme_static(active)
+            if static_app:
+                try:
+                    response = await static_app.get_response(path, request.scope)
+                    return response
+                except HTTPException:
+                    pass
 
         # 展示 SPA 路由回退：/ 和 /server/* 返回主题 index.html
         if path == "/" or path.startswith("/server/") or path.startswith("/server"):
