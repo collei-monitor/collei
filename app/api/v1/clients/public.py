@@ -1,11 +1,10 @@
 """公开接口 API 路由（无需认证 / 选择性登录）.
 
 端点:
-  GET  /clients/public/servers              获取公开服务器列表（游客过滤 hidden）
-  GET  /clients/public/groups               获取分组列表与分组内服务器UUID列表
+`弃用`  GET  /clients/public/servers              获取公开服务器列表（游客过滤 hidden）
+`弃用`  GET  /clients/public/groups               获取分组列表与分组内服务器UUID列表
   GET  /clients/public/servers/{uuid}/load  获取指定服务器的监控数据（游客限制 hidden/is_approved）
   GET  /clients/public/servers/{uuid}/network 获取指定服务器的网络探测结果（游客限制 hidden/is_approved）
-  GET  /public/custom             获取公开的自定义头部和自定义 Body 配置
 """
 
 from __future__ import annotations

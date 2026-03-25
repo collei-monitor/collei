@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import logging
 import mimetypes
+import re
 import secrets
 from contextlib import asynccontextmanager
+from html import escape as html_escape
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -116,6 +118,14 @@ async def _ensure_default_configs(application: "FastAPI") -> None:
         await server_cache.preload(session)
 
 
+def _inject_html_title(html: str) -> str:
+    """将 HTML 中的 <title>...</title> 替换为 config_cache 中配置的 app_name."""
+    from app.core.config_cache import config_cache
+    app_name = config_cache.get("app_name", "") or "Collei"
+    safe_name = html_escape(app_name)
+    return re.sub(r"<title>[^<]*</title>", f"<title>{safe_name}</title>", html, count=1)
+
+
 def create_app() -> FastAPI:
     application = FastAPI(
         title="Collei",
@@ -141,6 +151,11 @@ def create_app() -> FastAPI:
         from app.core.config_cache import config_cache
         active = config_cache.get("active_theme", "") or "default"
         if active == "default":
+            # 展示 SPA 路由：注入动态标题后直接返回，避免 StaticFiles 返回无标题的 HTML
+            if path == "/" or path.startswith("/server"):
+                _idx = FRONTEND_DIST / "index.html"
+                if _idx.exists():
+                    return HTMLResponse(_inject_html_title(_idx.read_text(encoding="utf-8")))
             return await call_next(request)
 
         # 主题目录
@@ -182,7 +197,7 @@ def create_app() -> FastAPI:
         @application.exception_handler(404)
         async def _spa_fallback(request: Request, exc: HTTPException):
             if not request.url.path.startswith("/api/") and spa_index.exists():
-                return HTMLResponse(spa_index.read_text(encoding="utf-8"))
+                return HTMLResponse(_inject_html_title(spa_index.read_text(encoding="utf-8")))
             return HTMLResponse(
                 content='{"detail":"Not Found"}',
                 status_code=404,
