@@ -21,7 +21,7 @@ from __future__ import annotations
 import time
 from typing import Union
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_client_ip, get_current_user
@@ -91,6 +91,7 @@ async def _issue_token_for_user(
     db: AsyncSession,
     user: User,
     request: Request,
+    response: Response,
     *,
     login_method: str,
 ) -> TokenResponse:
@@ -114,6 +115,17 @@ async def _issue_token_for_user(
         session_id=session_token,
         expires_delta=expires - int(time.time()),
     )
+
+    response.set_cookie(
+        key=settings.COOKIE_NAME,
+        value=access_token,
+        max_age=settings.SESSION_EXPIRE_DAYS * 86400,
+        path=settings.COOKIE_PATH,
+        httponly=True,
+        secure=settings.COOKIE_SECURE,
+        samesite=settings.COOKIE_SAMESITE,
+    )
+
     return TokenResponse(access_token=access_token)
 
 
@@ -123,6 +135,7 @@ async def _issue_token_for_user(
 async def login(
     body: LoginRequest,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_async_session),
 ):
     """密码登录接口，支持防暴力破解 & 2FA."""
@@ -164,6 +177,7 @@ async def login(
                 db,
                 user,
                 request,
+                response,
                 login_method="password+2fa",
             )
             await crud.record_login_attempt(
@@ -196,7 +210,7 @@ async def login(
         )
 
     # 4) 创建会话 & Token
-    token = await _issue_token_for_user(db, user, request, login_method="password")
+    token = await _issue_token_for_user(db, user, request, response, login_method="password")
 
     # 5) 记录成功登录
     await crud.record_login_attempt(
@@ -222,6 +236,7 @@ async def login(
 async def login_with_2fa(
     body: Login2FARequest,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_async_session),
 ):
     """二阶段登录：提交 challenge + TOTP 以完成登录."""
@@ -278,6 +293,7 @@ async def login_with_2fa(
         db,
         user,
         request,
+        response,
         login_method="password+2fa",
     )
     await crud.record_login_attempt(
@@ -301,16 +317,29 @@ async def logout(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_session),
     request: Request = None,  # type: ignore[assignment]
+    response: Response = None,  # type: ignore[assignment]
 ):
     """退出当前会话."""
-    # 从 Authorization header 中重新解析 session id
     from app.core.security import decode_access_token
 
+    # 从 Header 或 Cookie 提取 token 并删除对应 session
     auth_header = request.headers.get("authorization", "")
     token = auth_header.replace("Bearer ", "").strip()
+    if not token:
+        token = request.cookies.get(settings.COOKIE_NAME, "")
+
     payload = decode_access_token(token)
     if payload and "session" in payload:
         await crud.delete_session(db, payload["session"])
+
+    # 清除认证 Cookie
+    response.delete_cookie(
+        key=settings.COOKIE_NAME,
+        path=settings.COOKIE_PATH,
+        httponly=True,
+        secure=settings.COOKIE_SECURE,
+        samesite=settings.COOKIE_SAMESITE,
+    )
 
     return MessageResponse(message="Logged out successfully")
 

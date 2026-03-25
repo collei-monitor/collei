@@ -8,6 +8,7 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.security import decode_access_token
 from app.crud import auth as auth_crud
 from app.db.session import get_async_session
@@ -16,22 +17,37 @@ from app.models.auth import User
 _bearer_scheme = HTTPBearer(auto_error=False)
 
 
+def _extract_token(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None,
+) -> str | None:
+    """从 Bearer Header 或 HttpOnly Cookie 中提取 JWT token.
+
+    优先级: Authorization Header > Cookie
+    """
+    if credentials:
+        return credentials.credentials
+    return request.cookies.get(settings.COOKIE_NAME)
+
+
 async def get_current_user(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
     db: AsyncSession = Depends(get_async_session),
 ) -> User:
-    """从 Bearer token 中解析并验证当前用户.
+    """从 Bearer token 或 HttpOnly Cookie 中解析并验证当前用户.
 
     验证流程:
-      1. 解码 JWT
-      2. 检查 session 是否存在且未过期
-      3. 返回用户对象 & 更新 session 活跃信息
+      1. 从 Header 或 Cookie 提取 token
+      2. 解码 JWT
+      3. 检查 session 是否存在且未过期
+      4. 返回用户对象 & 更新 session 活跃信息
     """
-    if credentials is None:
+    raw_token = _extract_token(request, credentials)
+    if raw_token is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
-    payload = decode_access_token(credentials.credentials)
+    payload = decode_access_token(raw_token)
     if payload is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
 
@@ -62,10 +78,11 @@ async def get_optional_user(
     db: AsyncSession = Depends(get_async_session),
 ) -> User | None:
     """可选认证：有有效 token 则返回用户对象，否则返回 None（不抛出异常）."""
-    if credentials is None:
+    raw_token = _extract_token(request, credentials)
+    if raw_token is None:
         return None
 
-    payload = decode_access_token(credentials.credentials)
+    payload = decode_access_token(raw_token)
     if payload is None:
         return None
 

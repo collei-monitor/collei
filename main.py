@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import mimetypes
 import re
@@ -155,7 +156,8 @@ def create_app() -> FastAPI:
             if path == "/" or path.startswith("/server"):
                 _idx = FRONTEND_DIST / "index.html"
                 if _idx.exists():
-                    return HTMLResponse(_inject_html_title(_idx.read_text(encoding="utf-8")))
+                    html = await asyncio.to_thread(_idx.read_text, encoding="utf-8")
+                    return HTMLResponse(_inject_html_title(html))
             return await call_next(request)
 
         # 主题目录
@@ -179,7 +181,8 @@ def create_app() -> FastAPI:
 
         # 展示 SPA 路由回退：/ 和 /server/* 返回主题 index.html
         if path == "/" or path.startswith("/server/") or path.startswith("/server"):
-            return HTMLResponse(theme_index.read_text(encoding="utf-8"))
+            html = await asyncio.to_thread(theme_index.read_text, encoding="utf-8")
+            return HTMLResponse(html)
 
         # 其他路径交给内置 SPA 处理
         return await call_next(request)
@@ -197,7 +200,8 @@ def create_app() -> FastAPI:
         @application.exception_handler(404)
         async def _spa_fallback(request: Request, exc: HTTPException):
             if not request.url.path.startswith("/api/") and spa_index.exists():
-                return HTMLResponse(_inject_html_title(spa_index.read_text(encoding="utf-8")))
+                html = await asyncio.to_thread(spa_index.read_text, encoding="utf-8")
+                return HTMLResponse(_inject_html_title(html))
             return HTMLResponse(
                 content='{"detail":"Not Found"}',
                 status_code=404,

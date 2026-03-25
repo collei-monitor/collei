@@ -3,6 +3,7 @@
 import logging
 import secrets
 from pathlib import Path
+from typing import Literal
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -46,6 +47,12 @@ class Settings(BaseSettings):
     LOGIN_ATTEMPT_LIMIT: int = 10  # 窗口期内最大失败次数
     LOGIN_ATTEMPT_WINDOW: int = 600  # 窗口期（秒）
     LOGIN_2FA_CHALLENGE_EXPIRE_SECONDS: int = 300  # 两阶段登录挑战有效期（秒）
+
+    # ── Cookie 认证 ────────────────────────
+    COOKIE_NAME: str = "collei_token"
+    COOKIE_SECURE: bool = True       # 生产环境始终 True；本地 HTTP 开发需设为 False
+    COOKIE_SAMESITE: Literal["lax", "strict", "none"] = "lax"  # 防 CSRF
+    COOKIE_PATH: str = "/api"         # Cookie 仅随 API 请求发送
 
     # ── SSH CA ─────────────────────────────────────────────
     CA_MASTER_KEY: str = ""  # CA 私钥加密主密钥，为空时从 SECRET_KEY 派生（降级模式）
