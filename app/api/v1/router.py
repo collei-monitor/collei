@@ -9,6 +9,7 @@ from app.api.v1.config import router as config_router
 from app.api.v1.logs import router as logs_router
 from app.api.v1.notification import router as notification_router
 from app.api.v1.public import router as public_router
+from app.api.v1.themes import router as themes_router
 from app.api.v1.ws import router as ws_router
 from app.api.v1.ws_sftp import router as ws_sftp_router
 from app.api.v1.ws_ssh import router as ws_ssh_router
@@ -20,6 +21,7 @@ api_v1_router.include_router(public_router)
 api_v1_router.include_router(clients_router)
 api_v1_router.include_router(agent_router)
 api_v1_router.include_router(config_router)
+api_v1_router.include_router(themes_router)
 api_v1_router.include_router(ws_router)
 api_v1_router.include_router(ws_ssh_router)
 api_v1_router.include_router(ws_sftp_router)

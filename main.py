@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import mimetypes
 import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -10,7 +11,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.exceptions import HTTPException
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.router import api_v1_router
@@ -22,6 +23,8 @@ from app.db.session import async_session_factory, engine
 import app.db.base  # noqa: F401
 
 FRONTEND_DIST = Path(__file__).parent / "frontend" / "dist"
+DATA_DIR = Path(__file__).parent / "data"
+THEMES_DIR = DATA_DIR / "themes"
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +126,48 @@ def create_app() -> FastAPI:
     )
     application.add_middleware(GZipMiddleware, minimum_size=1000)
     application.include_router(api_v1_router)
+
+    # ── 自定义主题中间件 ─────────────────────────────────────────────────────
+    # 在 SPA mount 之前注册，优先拦截展示路由
+    @application.middleware("http")
+    async def theme_middleware(request: Request, call_next):
+        path = request.url.path
+
+        # 放行：API、管理端、登录页
+        if path.startswith(("/api/", "/admin", "/login")):
+            return await call_next(request)
+
+        # 读取当前激活主题
+        from app.core.config_cache import config_cache
+        active = config_cache.get("active_theme", "") or "default"
+        if active == "default":
+            return await call_next(request)
+
+        # 主题目录
+        theme_dir = THEMES_DIR / active
+        theme_index = theme_dir / "index.html"
+        if not theme_index.exists():
+            return await call_next(request)
+
+        # 尝试匹配静态文件
+        clean_path = path.lstrip("/")
+        if clean_path:
+            candidate = theme_dir / clean_path
+            # 安全检查：防止路径逃逸
+            try:
+                candidate.resolve().relative_to(theme_dir.resolve())
+            except ValueError:
+                return await call_next(request)
+            if candidate.is_file():
+                media_type = mimetypes.guess_type(str(candidate))[0] or "application/octet-stream"
+                return FileResponse(str(candidate), media_type=media_type)
+
+        # 展示 SPA 路由回退：/ 和 /server/* 返回主题 index.html
+        if path == "/" or path.startswith("/server/") or path.startswith("/server"):
+            return HTMLResponse(theme_index.read_text(encoding="utf-8"))
+
+        # 其他路径交给内置 SPA 处理
+        return await call_next(request)
 
     # 托管前端静态资源（SPA）——仅当前端构建产物存在时挂载
     if FRONTEND_DIST.exists():
