@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     COOKIE_SAMESITE: Literal["lax", "strict", "none"] = "lax"  # 防 CSRF
     COOKIE_PATH: str = "/api"         # Cookie 仅随 API 请求发送
 
+    # ── 反向代理 ────────────────────────────
+    TRUSTED_PROXIES: str = "127.0.0.1"  # 可信代理 IP，逗号分隔；设为 "*" 信任所有
+
     # ── SSH CA ─────────────────────────────────────────────
     CA_MASTER_KEY: str = ""  # CA 私钥加密主密钥，为空时从 SECRET_KEY 派生（降级模式）
     CA_KEY_TTL: int = 300  # CA 私钥内存缓存 TTL（秒），默认 5 分钟

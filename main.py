@@ -15,6 +15,7 @@ from fastapi.exceptions import HTTPException
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.api.v1.router import api_v1_router
 from app.core.config import settings
@@ -150,6 +151,13 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
     application.add_middleware(GZipMiddleware, minimum_size=1000)
+
+    # ── 反向代理头处理（X-Forwarded-For / X-Forwarded-Proto）────────────────
+    trusted = settings.TRUSTED_PROXIES.strip()
+    if trusted:
+        trusted_hosts = "*" if trusted == "*" else [h.strip() for h in trusted.split(",") if h.strip()]
+        application.add_middleware(ProxyHeadersMiddleware, trusted_hosts=trusted_hosts)
+
     application.include_router(api_v1_router)
 
     # ── 自定义主题中间件 ─────────────────────────────────────────────────────
