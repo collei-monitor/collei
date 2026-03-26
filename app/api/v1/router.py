@@ -10,6 +10,7 @@ from app.api.v1.logs import router as logs_router
 from app.api.v1.dns import router as dns_router
 from app.api.v1.notification import router as notification_router
 from app.api.v1.public import router as public_router
+from app.api.v1.sso import router as sso_router
 from app.api.v1.themes import router as themes_router
 from app.api.v1.ws import router as ws_router
 from app.api.v1.ws_sftp import router as ws_sftp_router
@@ -18,6 +19,7 @@ from app.api.v1.ws_ssh import router as ws_ssh_router
 api_v1_router = APIRouter(prefix="/api/v1")
 
 api_v1_router.include_router(auth_router)
+api_v1_router.include_router(sso_router)
 api_v1_router.include_router(public_router)
 api_v1_router.include_router(clients_router)
 api_v1_router.include_router(agent_router)

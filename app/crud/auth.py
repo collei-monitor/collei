@@ -212,17 +212,58 @@ async def get_oidc_provider(db: AsyncSession, name: str) -> OIDCProvider | None:
 
 
 async def get_all_oidc_providers(db: AsyncSession) -> Sequence[OIDCProvider]:
-    result = await db.execute(select(OIDCProvider).order_by(OIDCProvider.name))
+    result = await db.execute(
+        select(OIDCProvider).order_by(OIDCProvider.display_order, OIDCProvider.name)
+    )
     return result.scalars().all()
 
 
-async def upsert_oidc_provider(db: AsyncSession, *, name: str, addition: str | None = None) -> OIDCProvider:
+async def get_enabled_oidc_providers(db: AsyncSession) -> Sequence[OIDCProvider]:
+    """查询所有已启用的 SSO 提供商."""
+    result = await db.execute(
+        select(OIDCProvider)
+        .where(OIDCProvider.enabled == 1)
+        .order_by(OIDCProvider.display_order, OIDCProvider.name)
+    )
+    return result.scalars().all()
+
+
+async def upsert_oidc_provider(
+    db: AsyncSession,
+    *,
+    name: str,
+    provider_type: str,
+    client_id: str,
+    client_secret_encrypted: str | None = None,
+    enabled: int = 1,
+    display_order: int = 0,
+    scope: str | None = None,
+    addition: str | None = None,
+) -> OIDCProvider:
+    from app.core.crypto import encrypt_credential
+
     existing = await get_oidc_provider(db, name)
     if existing:
+        existing.provider_type = provider_type
+        existing.client_id = client_id
+        if client_secret_encrypted is not None:
+            existing.client_secret = client_secret_encrypted
+        existing.enabled = enabled
+        existing.display_order = display_order
+        existing.scope = scope
         existing.addition = addition
         await db.flush()
         return existing
-    provider = OIDCProvider(name=name, addition=addition)
+    provider = OIDCProvider(
+        name=name,
+        provider_type=provider_type,
+        client_id=client_id,
+        client_secret=client_secret_encrypted,
+        enabled=enabled,
+        display_order=display_order,
+        scope=scope,
+        addition=addition,
+    )
     db.add(provider)
     await db.flush()
     return provider

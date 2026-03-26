@@ -88,16 +88,35 @@ class TwoFactorVerifyRequest(BaseModel):
     totp_code: str = Field(..., min_length=6, max_length=6)
 
 
-# ── OIDC Provider ────────────────────────────────────────────────────────────
+# ── OIDC / SSO Provider ────────────────────────────────────────────────────────────────
 
 class OIDCProviderCreate(BaseModel):
     name: str = Field(..., min_length=1)
+    provider_type: str = Field(..., min_length=1, description="google/github/microsoft 等")
+    client_id: str = Field(..., min_length=1)
+    client_secret: str | None = Field(None, min_length=1, description="留空则保留已有密钥（仅更新时有效）")
+    enabled: int = Field(1, ge=0, le=1)
+    display_order: int = 0
+    scope: str | None = Field(None, description="自定义 scope，逗号分隔")
     addition: str | None = None
 
 
 class OIDCProviderRead(BaseModel):
     name: str
+    provider_type: str
+    client_id: str
+    has_secret: bool = Field(description="是否已配置 client_secret")
+    enabled: int = 1
+    display_order: int = 0
+    scope: str | None = None
     addition: str | None = None
+
+
+class SSOProviderPublic(BaseModel):
+    """公开端点返回的 SSO 提供商信息（不含敏感字段）."""
+    name: str
+    provider_type: str
+    display_order: int = 0
 
     model_config = {"from_attributes": True}
 

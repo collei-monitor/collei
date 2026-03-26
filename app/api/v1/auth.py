@@ -470,12 +470,26 @@ async def disable_2fa(
 
 # ── OIDC 提供商管理 ──────────────────────────────────────────────────────────
 
+def _provider_to_read(p) -> OIDCProviderRead:
+    return OIDCProviderRead(
+        name=p.name,
+        provider_type=p.provider_type,
+        client_id=p.client_id,
+        has_secret=bool(p.client_secret),
+        enabled=p.enabled,
+        display_order=p.display_order,
+        scope=p.scope,
+        addition=p.addition,
+    )
+
+
 @router.get("/oidc", response_model=list[OIDCProviderRead])
 async def list_oidc_providers(
     _current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_session),
 ):
-    return await crud.get_all_oidc_providers(db)
+    providers = await crud.get_all_oidc_providers(db)
+    return [_provider_to_read(p) for p in providers]
 
 
 @router.post("/oidc", response_model=OIDCProviderRead, status_code=status.HTTP_201_CREATED)
@@ -484,7 +498,39 @@ async def create_or_update_oidc(
     _current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_session),
 ):
-    return await crud.upsert_oidc_provider(db, name=body.name, addition=body.addition)
+    from app.core.crypto import encrypt_credential
+    from app.core.sso_factory import get_supported_types
+
+    if body.provider_type not in get_supported_types():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported provider type: {body.provider_type}. "
+                   f"Supported: {', '.join(get_supported_types())}",
+        )
+
+    encrypted_secret = encrypt_credential(body.client_secret) if body.client_secret else None
+
+    # 新建时必须提供 client_secret
+    if not encrypted_secret:
+        existing = await crud.get_oidc_provider(db, body.name)
+        if not existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="client_secret is required when creating a new provider",
+            )
+
+    provider = await crud.upsert_oidc_provider(
+        db,
+        name=body.name,
+        provider_type=body.provider_type,
+        client_id=body.client_id,
+        client_secret_encrypted=encrypted_secret,
+        enabled=body.enabled,
+        display_order=body.display_order,
+        scope=body.scope,
+        addition=body.addition,
+    )
+    return _provider_to_read(provider)
 
 
 @router.delete("/oidc/{name}", response_model=MessageResponse)

@@ -113,9 +113,18 @@ class OAuthState(Base):
 # ─── OIDC Providers ──────────────────────────────────────────────────────────
 
 class OIDCProvider(Base):
-    """OIDC 第三方单点登录服务提供商配置."""
+    """OIDC / OAuth2 第三方单点登录服务提供商配置."""
 
     __tablename__ = "oidc"
 
     name: Mapped[str] = mapped_column(String, primary_key=True, unique=True)
-    addition: Mapped[str | None] = mapped_column(Text)  # JSON
+    provider_type: Mapped[str] = mapped_column(
+        String, default="google", server_default=text("'google'"))
+    client_id: Mapped[str] = mapped_column(String, default="")
+    client_secret: Mapped[str] = mapped_column(String, default="")  # Fernet 加密存储
+    enabled: Mapped[int] = mapped_column(
+        Integer, default=1, server_default=text("1"))
+    display_order: Mapped[int] = mapped_column(
+        Integer, default=0, server_default=text("0"))
+    scope: Mapped[str | None] = mapped_column(String)  # 自定义 scope，逗号分隔
+    addition: Mapped[str | None] = mapped_column(Text)  # 额外配置 JSON（如 tenant）
