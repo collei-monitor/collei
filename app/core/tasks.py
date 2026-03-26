@@ -55,6 +55,10 @@ class BackgroundTasks:
         from app.core.alert_engine import alert_engine
         await alert_engine.start()
 
+        # 启动 DDNS 引擎
+        from app.core.ddns_engine import ddns_engine
+        await ddns_engine.start()
+
         await audit.background(
             msg_type="system", message="后台任务已启动", source="tasks")
 
@@ -63,6 +67,10 @@ class BackgroundTasks:
         # 停止告警引擎
         from app.core.alert_engine import alert_engine
         await alert_engine.stop()
+
+        # 停止 DDNS 引擎
+        from app.core.ddns_engine import ddns_engine
+        await ddns_engine.stop()
 
         for task in self._tasks:
             task.cancel()

@@ -36,6 +36,14 @@ from app.models.config import Config  # noqa: F401
 # ── Command Tasks ──
 from app.models.task import Task, TaskExecution, TaskExecutionLog  # noqa: F401
 
+# ── DNS & DDNS ──
+from app.models.dns import (  # noqa: F401
+    DdnsTask,
+    DnsCredential,
+    DnsDomain,
+    DnsRecord,
+)
+
 # ── Notification & Alerts ──
 from app.models.notification import (  # noqa: F401
     AlertChannel,

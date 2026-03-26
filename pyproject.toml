@@ -21,6 +21,7 @@ dependencies = [
     "aiosmtplib>=5.0",
     "asyncssh>=2.17",
     "cryptography>=42.0",
+    "dns-lexicon>=3.23",
 ]
 
 [project.optional-dependencies]
