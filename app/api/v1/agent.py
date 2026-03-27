@@ -472,8 +472,8 @@ def _is_private_host(hostname: str) -> bool:
     return False
 
 
-def _validate_agent_url(url: str) -> None:
-    """校验 agent_url 是否为合法的外部 HTTP(S) URL.
+def _validate_agent_url(url: str, config_name: str = "agent_url") -> None:
+    """校验 URL 是否为合法的外部 HTTP(S) URL.
 
     Raises:
         HTTPException: URL 为空 / 非法 / 指向内网时抛出。
@@ -481,24 +481,24 @@ def _validate_agent_url(url: str) -> None:
     if not url:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="agent_url is not configured",
+            detail=f"{config_name} is not configured",
         )
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme not in ("http", "https"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="agent_url must use http or https scheme",
+            detail=f"{config_name} must use http or https scheme",
         )
     hostname = parsed.hostname
     if not hostname:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="agent_url has no valid hostname",
+            detail=f"{config_name} has no valid hostname",
         )
     if _is_private_host(hostname):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="agent_url must not point to a private/reserved address",
+            detail=f"{config_name} must not point to a private/reserved address",
         )
 
 
@@ -676,7 +676,7 @@ async def agent_install_script(
 
     # ── 读取并校验脚本 URL ──
     script_url: str = config_cache.get("agent_install_script_url", "") or ""
-    _validate_agent_url(script_url)
+    _validate_agent_url(script_url, "agent_install_script_url")
 
     # ── 流式代理 ──
     client = httpx.AsyncClient(
