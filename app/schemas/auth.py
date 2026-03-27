@@ -67,6 +67,7 @@ class UserUpdate(BaseModel):
     """用户自行更新个人信息."""
     username: str | None = Field(None, min_length=1, max_length=64)
     password: str | None = Field(None, min_length=6)
+    current_password: str | None = Field(None, description="修改密码时必须提供当前密码")
 
 
 # ── Session ───────────────────────────────────────────────────────────────────

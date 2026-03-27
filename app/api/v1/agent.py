@@ -5,13 +5,20 @@
   POST  /agent/verify           Agent 验证 token（被动注册）
   POST  /agent/report           Agent 混合上报（硬件 + 监控数据）
   POST  /agent/tasks/report     Agent 上报任务执行结果
+  GET   /agent/download         代理下载 Agent 二进制（流式转发，不落盘）
+  GET   /agent/install-script   代理下载安装脚本（流式转发，不落盘）
 """
 
 from __future__ import annotations
 
+import ipaddress
+import logging
 import time
+import urllib.parse
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config_cache import config_cache
@@ -38,6 +45,14 @@ from app.schemas.task import (
 )
 
 router = APIRouter(prefix="/agent", tags=["agent"])
+
+_log = logging.getLogger(__name__)
+
+_DOWNLOAD_CHUNK_SIZE = 65_536  # 64 KB
+_DEFAULT_MAX_SIZE = 200 * 1024 * 1024  # 200 MB
+_SCRIPT_MAX_SIZE = 1 * 1024 * 1024  # 1 MB — 安装脚本体积上限
+_UPSTREAM_CONNECT_TIMEOUT = 15  # 秒
+_UPSTREAM_READ_TIMEOUT = 300  # 秒
 
 
 # ─── 辅助函数 ─────────────────────────────────────────────────────────────────
@@ -421,4 +436,314 @@ async def agent_task_report(
         await crud_task.upsert_execution_log(db, body.execution_id, body.output)
 
     return MessageResponse(message="Task result received")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Agent 二进制代理下载
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# SSRF 防护：拒绝将请求代理到私有 / 保留地址
+_PRIVATE_NETWORKS = [
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),
+    ipaddress.ip_network("fe80::/10"),
+]
+
+
+def _is_private_host(hostname: str) -> bool:
+    """检查主机名解析后是否为私有 / 保留 IP（防止 SSRF）."""
+    import socket
+
+    try:
+        # 解析为 IP（支持 IPv4 和 IPv6）
+        infos = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+    except socket.gaierror:
+        return True  # 无法解析时拒绝
+    for info in infos:
+        addr = ipaddress.ip_address(info[4][0])
+        for net in _PRIVATE_NETWORKS:
+            if addr in net:
+                return True
+    return False
+
+
+def _validate_agent_url(url: str) -> None:
+    """校验 agent_url 是否为合法的外部 HTTP(S) URL.
+
+    Raises:
+        HTTPException: URL 为空 / 非法 / 指向内网时抛出。
+    """
+    if not url:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="agent_url is not configured",
+        )
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="agent_url must use http or https scheme",
+        )
+    hostname = parsed.hostname
+    if not hostname:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="agent_url has no valid hostname",
+        )
+    if _is_private_host(hostname):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="agent_url must not point to a private/reserved address",
+        )
+
+
+@router.get("/download")
+async def agent_download(
+    token: str = Query(..., min_length=1, description="reg-token 或 server token"),
+    arch: str = Query("", description="目标架构，如 amd64、arm64；用于替换 agent_url 中的 {arch} 占位符"),
+    db: AsyncSession = Depends(get_async_session),
+):
+    """代理下载 Agent 二进制 — 流式转发，不在面板本地落盘.
+
+    鉴权:
+      - token 匹配 global_registration_token（自动注册模式），或
+      - token 匹配某台 server 的专属 token（被动注册模式）
+
+    流程:
+      1. 校验 token
+      2. 读取 agent_url 配置并做 SSRF 安全检查
+      3. 如果提供了 arch 参数，替换 agent_url 中的 {arch} 占位符
+      4. 发起上游 HTTP 请求，以流式响应逐 chunk 转发给客户端
+    """
+    # ── 鉴权 ──
+    valid = False
+    global_token = config_cache.get("global_registration_token", "")
+    if global_token and token == global_token:
+        valid = True
+    if not valid:
+        # 检查缓存中的 server token（仅 approved 服务器）
+        if server_cache.get_uuid_by_token(token):
+            valid = True
+    if not valid:
+        # 回落数据库查询（含未批准服务器）
+        srv = await crud_clients.get_server_by_token(db, token)
+        if srv:
+            valid = True
+    if not valid:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+        )
+
+    # ── 读取并校验 agent_url ──
+    agent_url: str = config_cache.get("agent_url", "") or ""
+
+    # 架构模板替换：将 {arch} 占位符替换为实际值
+    _ALLOWED_ARCH = {"amd64", "arm64"}
+    if arch:
+        if arch not in _ALLOWED_ARCH:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unsupported arch '{arch}'. Allowed: {sorted(_ALLOWED_ARCH)}",
+            )
+        agent_url = agent_url.replace("{arch}", arch)
+
+    _validate_agent_url(agent_url)
+
+    # ── 最大下载体积 ──
+    max_size_str = config_cache.get("agent_download_max_size", "")
+    try:
+        max_size = int(max_size_str) if max_size_str else _DEFAULT_MAX_SIZE
+    except (ValueError, TypeError):
+        max_size = _DEFAULT_MAX_SIZE
+
+    # ── 流式代理 ──
+    client = httpx.AsyncClient(
+        timeout=httpx.Timeout(
+            connect=_UPSTREAM_CONNECT_TIMEOUT,
+            read=_UPSTREAM_READ_TIMEOUT,
+            write=10,
+            pool=10,
+        ),
+        follow_redirects=True,
+        headers={"User-Agent": "Collei-Panel/1.0"},
+    )
+
+    try:
+        req = client.build_request("GET", agent_url)
+        upstream = await client.send(req, stream=True)
+    except httpx.HTTPError as exc:
+        await client.aclose()
+        _log.warning("agent download: upstream request failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to connect to agent_url upstream",
+        )
+
+    if upstream.status_code != 200:
+        body_text = (await upstream.aread()).decode(errors="replace")[:200]
+        await upstream.aclose()
+        await client.aclose()
+        _log.warning("agent download: upstream returned %s: %s", upstream.status_code, body_text)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Upstream returned HTTP {upstream.status_code}",
+        )
+
+    # 透传关键响应头
+    resp_headers: dict[str, str] = {}
+    for hdr in ("content-length", "content-disposition", "etag", "last-modified"):
+        val = upstream.headers.get(hdr)
+        if val:
+            resp_headers[hdr] = val
+
+    # 上游声明的 Content-Length 超限时直接拒绝
+    content_length = upstream.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > max_size:
+                await upstream.aclose()
+                await client.aclose()
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail="Upstream file exceeds maximum allowed size",
+                )
+        except ValueError:
+            pass
+
+    content_type = upstream.headers.get("content-type", "application/octet-stream")
+
+    async def _stream_chunks():
+        """逐 chunk 读取并转发上游数据，超限时中断."""
+        transferred = 0
+        try:
+            async for chunk in upstream.aiter_bytes(_DOWNLOAD_CHUNK_SIZE):
+                transferred += len(chunk)
+                if transferred > max_size:
+                    _log.warning(
+                        "agent download: exceeded max size (%d), aborting", max_size,
+                    )
+                    break
+                yield chunk
+        finally:
+            await upstream.aclose()
+            await client.aclose()
+
+    return StreamingResponse(
+        _stream_chunks(),
+        media_type=content_type,
+        headers=resp_headers,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 安装脚本代理下载
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@router.get("/install-script")
+async def agent_install_script(
+    token: str = Query(..., min_length=1, description="reg-token 或 server token"),
+    db: AsyncSession = Depends(get_async_session),
+):
+    """代理下载安装脚本 — 流式转发，不在面板本地落盘.
+
+    鉴权逻辑与 /agent/download 一致。
+    上游 URL 从 agent_install_script_url 配置读取。
+    """
+    # ── 鉴权 ──
+    valid = False
+    global_token = config_cache.get("global_registration_token", "")
+    if global_token and token == global_token:
+        valid = True
+    if not valid:
+        if server_cache.get_uuid_by_token(token):
+            valid = True
+    if not valid:
+        srv = await crud_clients.get_server_by_token(db, token)
+        if srv:
+            valid = True
+    if not valid:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+        )
+
+    # ── 读取并校验脚本 URL ──
+    script_url: str = config_cache.get("agent_install_script_url", "") or ""
+    _validate_agent_url(script_url)
+
+    # ── 流式代理 ──
+    client = httpx.AsyncClient(
+        timeout=httpx.Timeout(
+            connect=_UPSTREAM_CONNECT_TIMEOUT,
+            read=60,
+            write=10,
+            pool=10,
+        ),
+        follow_redirects=True,
+        headers={"User-Agent": "Collei-Panel/1.0"},
+    )
+
+    try:
+        req = client.build_request("GET", script_url)
+        upstream = await client.send(req, stream=True)
+    except httpx.HTTPError as exc:
+        await client.aclose()
+        _log.warning("install-script: upstream request failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to connect to agent_install_script_url upstream",
+        )
+
+    if upstream.status_code != 200:
+        body_text = (await upstream.aread()).decode(errors="replace")[:200]
+        await upstream.aclose()
+        await client.aclose()
+        _log.warning("install-script: upstream returned %s: %s", upstream.status_code, body_text)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Upstream returned HTTP {upstream.status_code}",
+        )
+
+    # 上游 Content-Length 超限时直接拒绝
+    content_length = upstream.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > _SCRIPT_MAX_SIZE:
+                await upstream.aclose()
+                await client.aclose()
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail="Upstream script exceeds maximum allowed size",
+                )
+        except ValueError:
+            pass
+
+    async def _stream_script():
+        transferred = 0
+        try:
+            async for chunk in upstream.aiter_bytes(_DOWNLOAD_CHUNK_SIZE):
+                transferred += len(chunk)
+                if transferred > _SCRIPT_MAX_SIZE:
+                    _log.warning(
+                        "install-script: exceeded max size (%d), aborting",
+                        _SCRIPT_MAX_SIZE,
+                    )
+                    break
+                yield chunk
+        finally:
+            await upstream.aclose()
+            await client.aclose()
+
+    return StreamingResponse(
+        _stream_script(),
+        media_type="text/x-shellscript",
+        headers={"Content-Disposition": "inline; filename=\"install.sh\""},
+    )
 

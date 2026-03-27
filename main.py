@@ -99,6 +99,8 @@ _DEFAULT_CONFIGS: dict[str, str] = {
     "load_hour_retain_hours": "72",
     "log_retain_days": "30",
     "agent_url": "",
+    "agent_install_script_url": "",
+    "agent_download_max_size": "209715200",
     "custom_headers": "",
     "custom_body": "",
 }

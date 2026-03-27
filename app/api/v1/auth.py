@@ -401,6 +401,11 @@ async def update_me(
                 status_code=status.HTTP_409_CONFLICT, detail="Username already taken")
         update_data["username"] = body.username
     if body.password is not None:
+        if not verify_password(body.current_password or "", current_user.passwd):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Current password is incorrect",
+            )
         update_data["passwd"] = hash_password(body.password)
 
     if not update_data:

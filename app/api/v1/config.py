@@ -40,6 +40,8 @@ _WRITABLE_KEYS = {
     "disputed_territory",
     "network_status_retain_hours",
     "agent_url",
+    "agent_install_script_url",
+    "agent_download_max_size",
     "custom_headers",
     "custom_body",
 }
