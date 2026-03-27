@@ -14,11 +14,14 @@ import stat
 import time
 
 import asyncssh
-from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import authenticate_ws_connection
 from app.core.security import decode_ws_token
 from app.core.sftp_manager import SFTPSession, sftp_manager
 from app.core.ssh_manager import ssh_manager
+from app.db.session import get_async_session
 
 logger = logging.getLogger(__name__)
 
@@ -106,8 +109,13 @@ async def frontend_sftp_ws(
     ws: WebSocket,
     token: str | None = Query(None),
     session_id: str | None = Query(None),
+    db: AsyncSession = Depends(get_async_session),
 ):
     """前端 SFTP WebSocket.
+
+    认证方式（优先级: ws_token > Cookie）:
+      - token query param（ws_token）
+      - HttpOnly Cookie（浏览器自动携带）
 
     协议:
         下行: ready / auth_required / ls / stat / cat / download_start / download_end /
@@ -115,7 +123,8 @@ async def frontend_sftp_ws(
         上行: auth / ls / stat / cat / download / upload / write / mkdir / rm / rename /
             close / ping / (binary: 上传分块)
     """
-    if not token or not decode_ws_token(token):
+    user_uuid = await authenticate_ws_connection(ws, token, db)
+    if not user_uuid:
         await ws.close(code=4001, reason="Unauthorized")
         return
 

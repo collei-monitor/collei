@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Request, WebSocket, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -102,6 +102,46 @@ async def get_optional_user(
     await auth_crud.touch_session(db, session_id, ip=client_ip, user_agent=user_agent)
 
     return user
+
+
+async def authenticate_ws_connection(
+    ws: "WebSocket",
+    token: str | None,
+    db: AsyncSession,
+) -> str | None:
+    """WebSocket 连接认证 — 支持 ws_token query 参数和 HttpOnly Cookie 双模式.
+
+    优先级: ws_token query > Cookie
+    返回 user_uuid 或 None。
+    """
+    from app.core.security import decode_ws_token
+
+    # 1. ws_token query 参数（原有逻辑，向后兼容）
+    if token:
+        user_uuid = decode_ws_token(token)
+        if user_uuid:
+            return user_uuid
+
+    # 2. Cookie 中的 access_token
+    cookie_token = ws.cookies.get(settings.COOKIE_NAME)
+    if not cookie_token:
+        return None
+
+    payload = decode_access_token(cookie_token)
+    if payload is None:
+        return None
+
+    user_uuid = payload.get("sub", "")
+    session_id = payload.get("session", "")
+    if not user_uuid or not session_id:
+        return None
+
+    # 验证 session 有效性
+    session = await auth_crud.get_session(db, session_id)
+    if session is None or session.expires < int(time.time()):
+        return None
+
+    return user_uuid
 
 
 def get_client_ip(request: Request) -> str:

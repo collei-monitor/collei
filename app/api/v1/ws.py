@@ -3,6 +3,10 @@
 端点:
   WS  /api/v1/ws?token=<ws_token>   管理面板 WebSocket 连接
 
+认证方式（优先级从高到低）:
+  1. URL query param: token=<ws_token>（由 GET /auth/me 颁发，60 秒有效）
+  2. HttpOnly Cookie: 浏览器自动携带的 access_token Cookie
+
 协议:
   下行（服务端 → 客户端）:
     type="nodes"   — 节点列表与分组信息（首次连接 / 服务器变更 / 客户端主动请求）
@@ -19,11 +23,13 @@ from __future__ import annotations
 import json
 import time
 
-from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import decode_ws_token
+from app.api.deps import authenticate_ws_connection
 from app.core.server_cache import server_cache
 from app.core.ws_manager import ws_manager
+from app.db.session import get_async_session
 
 router = APIRouter(tags=["websocket"])
 
@@ -32,14 +38,18 @@ router = APIRouter(tags=["websocket"])
 async def websocket_endpoint(
     ws: WebSocket,
     token: str | None = Query(None, description="由 GET /auth/me 返回的 ws_token"),
+    db: AsyncSession = Depends(get_async_session),
 ):
     """面板 WebSocket 连接.
 
-    前端通过 URL query param 传入 ws_token（由 GET /auth/me 颁发，60 秒有效）。
-    - 认证成功：推送全部服务器（含隐藏）。
-    - 认证失败 / 未提供 token：推送非隐藏服务器。
+    支持两种认证方式（优先级: ws_token > Cookie）:
+    - ws_token query param（由 GET /auth/me 颁发，60 秒有效）
+    - HttpOnly Cookie（浏览器自动携带）
+    认证成功：推送全部服务器（含隐藏）。
+    认证失败 / 未提供凭证：推送非隐藏服务器。
     """
-    authenticated = bool(token and decode_ws_token(token))
+    user_uuid = await authenticate_ws_connection(ws, token, db)
+    authenticated = user_uuid is not None
 
     await ws_manager.connect(ws, authenticated=authenticated)
     try:
