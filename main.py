@@ -16,6 +16,7 @@ from fastapi.exceptions import HTTPException
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.api.v1.router import api_v1_router
@@ -197,7 +198,7 @@ def create_app() -> FastAPI:
                 try:
                     response = await static_app.get_response(clean_path, request.scope)
                     return response
-                except HTTPException:
+                except StarletteHTTPException:
                     pass
 
         # 展示 SPA 路由回退：/ 和 /server/* 返回主题 index.html
