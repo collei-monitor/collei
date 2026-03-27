@@ -651,6 +651,15 @@ async def _handle_cat(
                 "message": f"File too large (max {MAX_TEXT_READ_SIZE // (1024 * 1024)} MB)",
             })
             return
+        # 二进制文件检测：检查前 8KB 是否包含 null 字节
+        if b"\x00" in content_bytes[:8192]:
+            await ws.send_json({
+                "type": "binary",
+                "request_id": rid,
+                "path": path,
+                "size": len(content_bytes),
+            })
+            return
         try:
             content = content_bytes.decode(encoding)
         except UnicodeDecodeError:
