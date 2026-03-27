@@ -6,6 +6,7 @@ import asyncio
 import logging
 import re
 import secrets
+from typing import Any, cast
 from contextlib import asynccontextmanager
 from html import escape as html_escape
 from pathlib import Path
@@ -156,7 +157,7 @@ def create_app() -> FastAPI:
     trusted = settings.TRUSTED_PROXIES.strip()
     if trusted:
         trusted_hosts = "*" if trusted == "*" else [h.strip() for h in trusted.split(",") if h.strip()]
-        application.add_middleware(ProxyHeadersMiddleware, trusted_hosts=trusted_hosts)
+        application.add_middleware(cast(Any, ProxyHeadersMiddleware), trusted_hosts=trusted_hosts)
 
     application.include_router(api_v1_router)
 
