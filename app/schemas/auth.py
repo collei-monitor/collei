@@ -39,6 +39,13 @@ class Login2FARequest(BaseModel):
 
 
 # ── User ──────────────────────────────────────────────────────────────────────
+class SSOProviderPublic(BaseModel):
+    """公开端点返回的 SSO 提供商信息（不含敏感字段）."""
+    name: str
+    provider_type: str
+    display_order: int = 0
+
+    model_config = {"from_attributes": True}
 
 class UserRead(BaseModel):
     """返回给前端的用户信息（脱敏）."""
@@ -51,6 +58,7 @@ class UserRead(BaseModel):
     ws_token: str | None = Field(None, description="WebSocket 连接专用短时效 token（60 秒）")
     global_registration_token: str | None = None
     agent_url: str | None = None
+    providers: list[SSOProviderPublic] = Field(default_factory=list, description="已启用的 SSO 登录方式")
 
     model_config = {"from_attributes": True}
 
@@ -110,15 +118,6 @@ class OIDCProviderRead(BaseModel):
     display_order: int = 0
     scope: str | None = None
     addition: str | None = None
-
-
-class SSOProviderPublic(BaseModel):
-    """公开端点返回的 SSO 提供商信息（不含敏感字段）."""
-    name: str
-    provider_type: str
-    display_order: int = 0
-
-    model_config = {"from_attributes": True}
 
 
 # ── 通用响应 ──────────────────────────────────────────────────────────────────

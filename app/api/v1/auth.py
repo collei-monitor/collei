@@ -22,9 +22,10 @@ import time
 from typing import Union
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_client_ip, get_current_user
+from app.api.deps import get_client_ip, get_current_user, get_optional_user
 from app.core.alert_engine import alert_engine
 from app.core.config import settings
 from app.core.security import (
@@ -48,6 +49,7 @@ from app.schemas.auth import (
     OIDCProviderCreate,
     OIDCProviderRead,
     SessionRead,
+    SSOProviderPublic,
     TokenResponse,
     TwoFactorSetupResponse,
     TwoFactorVerifyRequest,
@@ -66,6 +68,7 @@ def _user_to_read(
     ws_token: str | None = None,
     global_registration_token: str | None = None,
     agent_url: str | None = None,
+    providers: list[SSOProviderPublic] | None = None,
 ) -> UserRead:
     return UserRead(
         uuid=user.uuid,
@@ -77,6 +80,7 @@ def _user_to_read(
         ws_token=ws_token,
         global_registration_token=global_registration_token,
         agent_url=agent_url,
+        providers=providers or [],
     )
 
 
@@ -348,16 +352,38 @@ async def logout(
 
 @router.get("/me", response_model=UserRead)
 async def get_me(
-    current_user: User = Depends(get_current_user),
+    current_user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_async_session),
 ):
-    """获取当前登录用户信息，同时颁发 60 秒有效的 WebSocket 临时 token."""
+    """获取当前用户信息.
+
+    - 已认证：返回完整用户信息 + providers
+    - 未认证：401 + 仅返回 providers
+    """
+    enabled_providers = await crud.get_enabled_oidc_providers(db)
+    providers = [
+        SSOProviderPublic(name=p.name, provider_type=p.provider_type, display_order=p.display_order)
+        for p in enabled_providers
+    ]
+
+    if current_user is None:
+        return JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={"providers": [p.model_dump() for p in providers]},
+        )
+
     from app.crud import config as crud_config
 
     token = create_ws_token(current_user.uuid)
     global_reg_token = await crud_config.get_config_value(db, "global_registration_token")
     agent_url = await crud_config.get_config_value(db, "agent_url")
-    return _user_to_read(current_user, ws_token=token, global_registration_token=global_reg_token, agent_url=agent_url)
+    return _user_to_read(
+        current_user,
+        ws_token=token,
+        global_registration_token=global_reg_token,
+        agent_url=agent_url,
+        providers=providers,
+    )
 
 
 @router.put("/me", response_model=UserRead)
