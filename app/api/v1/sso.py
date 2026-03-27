@@ -176,4 +176,8 @@ async def sso_callback(
         samesite=settings.COOKIE_SAMESITE,
     )
 
+    # 清除 fastapi-sso 遗留的临时 cookie
+    response.delete_cookie("sso_state")
+    response.delete_cookie("pkce_code_verifier")
+
     return response
