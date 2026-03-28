@@ -36,6 +36,9 @@ from app.models.config import Config  # noqa: F401
 # ── Command Tasks ──
 from app.models.task import Task, TaskExecution, TaskExecutionLog  # noqa: F401
 
+# ── SSH Scripts ──
+from app.models.ssh_script import SshScript  # noqa: F401
+
 # ── DNS & DDNS ──
 from app.models.dns import (  # noqa: F401
     DdnsTask,
