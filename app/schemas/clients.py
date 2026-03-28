@@ -161,6 +161,8 @@ class ServerFullDetail(BaseModel):
     current_run_id: str | None = None
     total_flow_out: int | None = None
     total_flow_in: int | None = None
+    current_disk_io: str | None = None
+    current_net_io: str | None = None
 
     # 所属分组
     groups: list[GroupRead] = []
@@ -211,6 +213,8 @@ class ServerStatusRead(BaseModel):
     boot_time: int | None = None
     total_flow_out: int | None = None
     total_flow_in: int | None = None
+    current_disk_io: str | None = None
+    current_net_io: str | None = None
 
     model_config = {"from_attributes": True}
 

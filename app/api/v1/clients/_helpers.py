@@ -64,6 +64,8 @@ def build_server_full_detail(
         current_run_id=status_obj.current_run_id if status_obj else None,
         total_flow_out=status_obj.total_flow_out if status_obj else None,
         total_flow_in=status_obj.total_flow_in if status_obj else None,
+        current_disk_io=status_obj.current_disk_io if status_obj else None,
+        current_net_io=status_obj.current_net_io if status_obj else None,
         groups=[GroupRead.model_validate(g) for g in groups] if groups else [],
         billing=BillingBrief(**billing_brief) if billing_brief else None,
     )

@@ -114,6 +114,10 @@ class ServerStatus(Base):
     boot_time: Mapped[int | None] = mapped_column(Integer)
     total_flow_out: Mapped[int | None] = mapped_column(Integer)
     total_flow_in: Mapped[int | None] = mapped_column(Integer)
+    current_disk_io: Mapped[str | None] = mapped_column(
+        String, default="[]", server_default=text("'[]'"))
+    current_net_io: Mapped[str | None] = mapped_column(
+        String, default="[]", server_default=text("'[]'"))
 
     server: Mapped["Server"] = relationship(
         "Server", back_populates="status")

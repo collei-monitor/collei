@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import ipaddress
+import json
 import logging
 import time
 import urllib.parse
@@ -307,6 +308,12 @@ async def agent_report(
         status_kwargs["total_flow_out"] = body.total_flow_out
     if body.total_flow_in is not None:
         status_kwargs["total_flow_in"] = body.total_flow_in
+    if body.current_disk_io is not None:
+        status_kwargs["current_disk_io"] = json.dumps(
+            body.current_disk_io, ensure_ascii=False)
+    if body.current_net_io is not None:
+        status_kwargs["current_net_io"] = json.dumps(
+            body.current_net_io, ensure_ascii=False)
 
     await crud_clients.upsert_server_status(
         db,
@@ -322,6 +329,12 @@ async def agent_report(
         cache_status_kwargs["total_flow_out"] = body.total_flow_out
     if body.total_flow_in is not None:
         cache_status_kwargs["total_flow_in"] = body.total_flow_in
+    if body.current_disk_io is not None:
+        cache_status_kwargs["current_disk_io"] = json.dumps(
+            body.current_disk_io, ensure_ascii=False)
+    if body.current_net_io is not None:
+        cache_status_kwargs["current_net_io"] = json.dumps(
+            body.current_net_io, ensure_ascii=False)
     server_cache.update_status(server.uuid, **cache_status_kwargs)
     if load_dict:
         server_cache.update_load(server.uuid, load_dict)

@@ -130,6 +130,8 @@ class ServerCache:
                 "boot_time": ss.boot_time,
                 "total_flow_out": ss.total_flow_out,
                 "total_flow_in": ss.total_flow_in,
+                "current_disk_io": ss.current_disk_io,
+                "current_net_io": ss.current_net_io,
             }
             for ss in statuses
         }
@@ -225,6 +227,8 @@ class ServerCache:
         boot_time: int | None = None,
         total_flow_out: int | None = None,
         total_flow_in: int | None = None,
+        current_disk_io: str | None = None,
+        current_net_io: str | None = None,
     ) -> None:
         """更新服务器状态缓存."""
         existing = self._statuses.get(uuid)
@@ -235,6 +239,8 @@ class ServerCache:
                 "boot_time": boot_time,
                 "total_flow_out": total_flow_out,
                 "total_flow_in": total_flow_in,
+                "current_disk_io": current_disk_io,
+                "current_net_io": current_net_io,
             }
         else:
             if status is not None:
@@ -247,6 +253,10 @@ class ServerCache:
                 existing["total_flow_out"] = total_flow_out
             if total_flow_in is not None:
                 existing["total_flow_in"] = total_flow_in
+            if current_disk_io is not None:
+                existing["current_disk_io"] = current_disk_io
+            if current_net_io is not None:
+                existing["current_net_io"] = current_net_io
 
     def update_load(self, uuid: str, load_dict: dict[str, Any]) -> None:
         """更新服务器最新负载缓存."""
@@ -538,6 +548,8 @@ class ServerCache:
                     "boot_time": st.get("boot_time"),
                     "total_flow_out": st.get("total_flow_out"),
                     "total_flow_in": st.get("total_flow_in"),
+                    "current_disk_io": st.get("current_disk_io"),
+                    "current_net_io": st.get("current_net_io"),
                 },
                 "load": dict(ld) if ld else None,
                 "traffic_used": self._cycle_traffic.get(uuid),

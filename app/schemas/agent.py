@@ -112,6 +112,10 @@ class AgentReportRequest(BaseModel):
     total_flow_out: int | None = Field(None, ge=0, description="累积出站流量 (Bytes)")
     total_flow_in: int | None = Field(None, ge=0, description="累积入站流量 (Bytes)")
 
+    # ── 磁盘与网卡详情（可选） ──
+    current_disk_io: list | None = Field(None, description="磁盘/分区详情 JSON 数组")
+    current_net_io: list | None = Field(None, description="网卡接口详情 JSON 数组")
+
     # ── 资源使用数据（可选） ──
     load_data: LoadData | None = Field(None, description="实时资源监控数据")
 

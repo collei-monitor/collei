@@ -176,6 +176,8 @@ async def upsert_server_status(
     boot_time: int | None = None,
     total_flow_out: int | None = None,
     total_flow_in: int | None = None,
+    current_disk_io: str | None = None,
+    current_net_io: str | None = None,
 ) -> ServerStatus:
     """更新或创建服务器状态记录."""
     existing = await get_server_status(db, uuid)
@@ -193,6 +195,10 @@ async def upsert_server_status(
             values["total_flow_out"] = total_flow_out
         if total_flow_in is not None:
             values["total_flow_in"] = total_flow_in
+        if current_disk_io is not None:
+            values["current_disk_io"] = current_disk_io
+        if current_net_io is not None:
+            values["current_net_io"] = current_net_io
         if values:
             await db.execute(
                 update(ServerStatus).where(
@@ -209,6 +215,8 @@ async def upsert_server_status(
         boot_time=boot_time,
         total_flow_out=total_flow_out,
         total_flow_in=total_flow_in,
+        current_disk_io=current_disk_io,
+        current_net_io=current_net_io,
     )
     db.add(ss)
     await db.flush()
