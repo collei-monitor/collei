@@ -160,10 +160,11 @@ async def agent_verify(
     if body.version is not None:
         old_version = getattr(server, "version", None)
         if old_version and old_version != body.version:
+            server_name = getattr(server, "name", None) or server.uuid
             await audit.emit(
                 db, msg_type="server",
                 message="Agent 版本变更",
-                detail=f"{old_version} → {body.version}",
+                detail=f"{server_name}: {old_version} → {body.version}",
                 source="agent",
                 server_uuid=server.uuid,
             )
@@ -317,10 +318,14 @@ async def agent_report(
             else getattr(server, "version", None)
         )
         if old_version and old_version != body.version:
+            server_name = (
+                cached_info.get("name") if cached_uuid
+                else getattr(server, "name", None)
+            ) or server.uuid
             await audit.emit(
                 db, msg_type="server",
                 message="Agent 版本变更",
-                detail=f"{old_version} → {body.version}",
+                detail=f"{server_name}: {old_version} → {body.version}",
                 source="agent",
                 server_uuid=server.uuid,
             )

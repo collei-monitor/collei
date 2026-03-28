@@ -452,15 +452,25 @@ class AlertEngine:
             "🔴 告警: %s | %s | %s=%.4f",
             rule["name"], server_name, rule["metric"], value,
         )
-        await audit.background(
-            msg_type="alert", message="告警触发并通知",
-            detail=(
-                f"rule={rule['name']}, server={server_uuid}, "
-                f"metric={rule['metric']}, value={value:.4f}, "
-                f"channels={sorted(channel_ids)}"
-            ),
-            server_uuid=server_uuid, source="alert_engine",
-        )
+        if channel_ids:
+            await audit.background(
+                msg_type="alert", message="告警触发并通知",
+                detail=(
+                    f"rule={rule['name']}, server={server_uuid}, "
+                    f"metric={rule['metric']}, value={value:.4f}, "
+                    f"channels={sorted(channel_ids)}"
+                ),
+                server_uuid=server_uuid, source="alert_engine",
+            )
+        else:
+            await audit.background(
+                msg_type="alert", message="告警触发（未绑定渠道）",
+                detail=(
+                    f"rule={rule['name']}, server={server_uuid}, "
+                    f"metric={rule['metric']}, value={value:.4f}"
+                ),
+                server_uuid=server_uuid, source="alert_engine",
+            )
 
     async def _on_resolved(
         self,
@@ -505,14 +515,21 @@ class AlertEngine:
             "🟢 恢复: %s | %s | %s=%.4f",
             rule["name"], server_name, rule["metric"], value,
         )
-        await audit.background(
-            msg_type="alert", message="告警恢复并通知",
-            detail=(
-                f"rule={rule['name']}, server={server_uuid}, "
-                f"channels={sorted(channel_ids)}"
-            ),
-            server_uuid=server_uuid, source="alert_engine",
-        )
+        if channel_ids:
+            await audit.background(
+                msg_type="alert", message="告警恢复并通知",
+                detail=(
+                    f"rule={rule['name']}, server={server_uuid}, "
+                    f"channels={sorted(channel_ids)}"
+                ),
+                server_uuid=server_uuid, source="alert_engine",
+            )
+        else:
+            await audit.background(
+                msg_type="alert", message="告警恢复（未绑定渠道）",
+                detail=f"rule={rule['name']}, server={server_uuid}",
+                server_uuid=server_uuid, source="alert_engine",
+            )
 
     async def _notify(self, channel_ids: set[int], message: str) -> None:
         """向指定渠道集合发送通知（实时查库获取最新配置）."""
