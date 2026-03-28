@@ -688,7 +688,8 @@ async def agent_install_script(
         )
 
     # ── 读取并校验脚本 URL ──
-    script_url: str = config_cache.get("agent_install_script_url", "") or ""
+    from app.core.config import settings as _settings
+    script_url: str = config_cache.get("agent_install_script_url", "") or _settings.AGENT_INSTALL_SCRIPT_URL
     _validate_agent_url(script_url, "agent_install_script_url")
 
     # ── 流式代理 ──

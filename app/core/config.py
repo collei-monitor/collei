@@ -65,6 +65,9 @@ class Settings(BaseSettings):
     DEFAULT_ADMIN_USERNAME: str = "admin"
     DEFAULT_ADMIN_PASSWORD: str = ""  # 为空时由程序随机生成并打印日志
 
+    # ── Agent ─────────────────────────────────────────────
+    AGENT_INSTALL_SCRIPT_URL: str = "https://raw.githubusercontent.com/collei-monitor/collei-agent/main/install.sh"
+
     # ── 后台任务 ──────────────────────────────────────────
     WS_BROADCAST_INTERVAL: float = 2.0  # WebSocket 广播周期（秒）
 
