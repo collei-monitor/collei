@@ -320,8 +320,8 @@ class AlertEngine:
         for rule_id, rule in self._rules.items():
             metric = rule["metric"]
 
-            # login 是事件驱动指标，不参与轮询评估
-            if metric == "login":
+            # 事件驱动指标不参与轮询评估
+            if metric in ("login", "ip_change"):
                 continue
 
             server_uuids = self._resolve_servers(rule_id)
@@ -600,6 +600,43 @@ class AlertEngine:
 
             await self._notify(channel_ids, message)
             logger.info("🔑 登录通知: %s from %s", username, ip)
+
+    async def notify_ip_change(
+        self,
+        *,
+        server_uuid: str,
+        server_name: str,
+        detail: str,
+    ) -> None:
+        """IP 地址变更时由 agent 层调用，向 metric='ip_change' 的规则渠道发送通知."""
+        for rule_id, rule in self._rules.items():
+            if rule["metric"] != "ip_change":
+                continue
+            # 检查该规则是否绑定了此服务器
+            server_uuids = self._resolve_servers(rule_id)
+            if server_uuid not in server_uuids:
+                continue
+            channel_ids = self._channel_ids_for_rule(rule_id)
+            if not channel_ids:
+                continue
+
+            custom = rule.get("custom_message")
+            if custom:
+                message = custom.format_map({
+                    "server_name": server_name,
+                    "server_uuid": server_uuid,
+                    "detail": detail,
+                    "rule_name": rule.get("name", ""),
+                })
+            else:
+                message = (
+                    f"🔄 IP 地址变更\n"
+                    f"服务器: {server_name}\n"
+                    f"{detail}"
+                )
+
+            await self._notify(channel_ids, message)
+            logger.info("🔄 IP 变更通知: %s | %s", server_name, detail)
 
     # ── 前端查询接口 ──────────────────────────────────────────────────
 

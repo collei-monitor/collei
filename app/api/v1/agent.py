@@ -156,6 +156,45 @@ async def agent_verify(
     if region and server.is_region_locked != 1:
         hardware["region"] = region
 
+    # ── 检测 Agent 版本变更 ──
+    if body.version is not None:
+        old_version = getattr(server, "version", None)
+        if old_version and old_version != body.version:
+            await audit.emit(
+                db, msg_type="server",
+                message="Agent 版本变更",
+                detail=f"{old_version} → {body.version}",
+                source="agent",
+                server_uuid=server.uuid,
+            )
+
+    # ── 检测 IP 变更 ──
+    ip_changes: list[str] = []
+    if body.ipv4 is not None:
+        old_ipv4 = getattr(server, "ipv4", None)
+        if old_ipv4 and old_ipv4 != body.ipv4:
+            ip_changes.append(f"IPv4: {old_ipv4} → {body.ipv4}")
+    if body.ipv6 is not None:
+        old_ipv6 = getattr(server, "ipv6", None)
+        if old_ipv6 and old_ipv6 != body.ipv6:
+            ip_changes.append(f"IPv6: {old_ipv6} → {body.ipv6}")
+    if ip_changes:
+        detail = ", ".join(ip_changes)
+        await audit.emit(
+            db, msg_type="server",
+            message="IP 地址变更",
+            detail=detail,
+            source="agent",
+            server_uuid=server.uuid,
+        )
+        from app.core.alert_engine import alert_engine
+        server_name = getattr(server, "name", None) or server.uuid
+        await alert_engine.notify_ip_change(
+            server_uuid=server.uuid,
+            server_name=server_name,
+            detail=detail,
+        )
+
     await crud_clients.update_server_hardware(db, server.uuid, hardware)
 
     # 确保存在 server_status 记录
@@ -285,6 +324,42 @@ async def agent_report(
                 source="agent",
                 server_uuid=server.uuid,
             )
+
+    # ── 检测 IP 变更 ──
+    ip_changes: list[str] = []
+    if body.ipv4 is not None:
+        old_ipv4 = (
+            cached_info.get("ipv4") if cached_uuid
+            else getattr(server, "ipv4", None)
+        )
+        if old_ipv4 and old_ipv4 != body.ipv4:
+            ip_changes.append(f"IPv4: {old_ipv4} → {body.ipv4}")
+    if body.ipv6 is not None:
+        old_ipv6 = (
+            cached_info.get("ipv6") if cached_uuid
+            else getattr(server, "ipv6", None)
+        )
+        if old_ipv6 and old_ipv6 != body.ipv6:
+            ip_changes.append(f"IPv6: {old_ipv6} → {body.ipv6}")
+    if ip_changes:
+        detail = ", ".join(ip_changes)
+        await audit.emit(
+            db, msg_type="server",
+            message="IP 地址变更",
+            detail=detail,
+            source="agent",
+            server_uuid=server.uuid,
+        )
+        from app.core.alert_engine import alert_engine
+        server_name = (
+            cached_info.get("name") if cached_uuid
+            else getattr(server, "name", None)
+        ) or server.uuid
+        await alert_engine.notify_ip_change(
+            server_uuid=server.uuid,
+            server_name=server_name,
+            detail=detail,
+        )
 
     if hardware_fields:
         await crud_clients.update_server_hardware(
