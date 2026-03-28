@@ -8,6 +8,7 @@ import time
 from typing import Any, Sequence
 
 from sqlalchemy import delete, select, update
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.network import NetworkStatus, NetworkTarget, NetworkTargetDispatch
@@ -226,18 +227,19 @@ async def batch_insert_network_status(
         成功插入的记录数
     """
     allowed_keys = {"target_id", "time", "median_latency", "max_latency", "min_latency", "packet_loss"}
-    count = 0
+    rows = []
     for r in records:
         values = {k: v for k, v in r.items() if k in allowed_keys}
         if "target_id" not in values:
             continue
         values.setdefault("time", int(time.time()))
         values.setdefault("packet_loss", 0)
-        db.add(NetworkStatus(server_uuid=server_uuid, **values))
-        count += 1
-    if count:
-        await db.flush()
-    return count
+        values["server_uuid"] = server_uuid
+        rows.append(values)
+    if rows:
+        stmt = sqlite_insert(NetworkStatus).values(rows).on_conflict_do_nothing()
+        await db.execute(stmt)
+    return len(rows)
 
 
 async def get_network_status_by_target(
