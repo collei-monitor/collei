@@ -23,6 +23,7 @@ from app.api.deps import get_current_user
 from app.core.config_cache import config_cache
 from app.core.geoip import DB_FILES, _DISPUTED_REMAP, list_available_dbs, lookup_region
 from app.crud import config as crud_config
+from app.crud.config import clear_config
 from app.crud.clients import batch_remap_regions
 from app.db.session import get_async_session
 from app.models.auth import User
@@ -212,22 +213,23 @@ async def set_config(
     return ConfigItem(key=config.key, value=config.value)
 
 
-@router.delete("/{key}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_config(
+@router.delete("/{key}", response_model=ConfigItem)
+async def clear_config_value(
     key: str,
     _current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_session),
 ):
-    """删除配置项."""
+    """清空配置项的值（将 value 置为 None，不删除记录）."""
     if key not in _WRITABLE_KEYS:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Config key '{key}' is not writable via API",
         )
-    deleted = await crud_config.delete_config(db, key)
-    if not deleted:
+    config = await clear_config(db, key)
+    if not config:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Config key '{key}' not found",
         )
     config_cache.delete(key)
+    return ConfigItem(key=config.key, value=config.value)

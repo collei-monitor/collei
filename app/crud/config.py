@@ -38,18 +38,19 @@ async def set_config(db: AsyncSession, key: str, value: str) -> Config:
     return config
 
 
-async def delete_config(db: AsyncSession, key: str) -> bool:
-    """删除配置."""
+async def clear_config(db: AsyncSession, key: str) -> Config | None:
+    """清空配置值（将 value 置为 None，不删除记录）."""
     config = await get_config(db, key)
     if not config:
-        return False
-    await db.delete(config)
+        return None
+    config.value = None
     await db.commit()
-    return True
+    await db.refresh(config)
+    return config
 
 
 async def get_all_configs(db: AsyncSession) -> list[Config]:
     """获取所有配置."""
     stmt = select(Config)
     result = await db.execute(stmt)
-    return result.scalars().all()
+    return list(result.scalars().all())
