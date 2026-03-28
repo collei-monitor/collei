@@ -65,6 +65,8 @@ async def _open_session_bridge(
     - bridge_task: reads from local socket, sends to Agent WS with session framing
     - bridge_writer: Agent replies are routed here by agent_ssh_tunnel_ws
     """
+    ws_lock = ssh_manager.get_ws_write_lock(session.server_uuid)
+
     sock_ssh, sock_bridge = _create_tcp_socketpair()
     sock_ssh.setblocking(False)
     sock_bridge.setblocking(False)
@@ -79,11 +81,12 @@ async def _open_session_bridge(
                 data = await bridge_reader.read(32768)
                 if not data:
                     break
-                await agent_ws.send_text(json.dumps({
-                    "type": "data",
-                    "session_id": session.session_id,
-                }))
-                await agent_ws.send_bytes(data)
+                async with ws_lock:
+                    await agent_ws.send_text(json.dumps({
+                        "type": "data",
+                        "session_id": session.session_id,
+                    }))
+                    await agent_ws.send_bytes(data)
         except Exception:
             pass
 
@@ -192,11 +195,13 @@ async def _request_agent_tunnel(
     session, agent_ws: WebSocket,
 ) -> bool:
     """Send open_tunnel to Agent and wait for tunnel_confirm."""
+    ws_lock = ssh_manager.get_ws_write_lock(session.server_uuid)
     session.tunnel_confirm.clear()
-    await agent_ws.send_json({
-        "type": "open_tunnel",
-        "session_id": session.session_id,
-    })
+    async with ws_lock:
+        await agent_ws.send_json({
+            "type": "open_tunnel",
+            "session_id": session.session_id,
+        })
     try:
         await asyncio.wait_for(session.tunnel_confirm.wait(), timeout=15)
         return True
@@ -220,6 +225,7 @@ async def _do_ssh_connect(
       2. Try certificate auth (silent, no user interaction)
       3. If cert auth fails → close bridge/tunnel → reopen → ask password
     """
+    ws_lock = ssh_manager.get_ws_write_lock(session.server_uuid)
     # ── Phase 1: Certificate auth (silent attempt) ────────────────────
 
     sock_ssh, bridge_task, bridge_writer = await _open_session_bridge(session, agent_ws)
@@ -273,20 +279,22 @@ async def _do_ssh_connect(
     finally:
         _close_bridge(session, bridge_task, bridge_writer)
         try:
-            await agent_ws.send_json({
-                "type": "close_session",
-                "session_id": session.session_id,
-            })
+            async with ws_lock:
+                await agent_ws.send_json({
+                    "type": "close_session",
+                    "session_id": session.session_id,
+                })
         except Exception:
             pass
 
     # ── Phase 2: Password auth (interactive) ──────────────────────────
 
     # Need fresh bridge + tunnel since the cert attempt consumed the previous ones
-    await agent_ws.send_json({
-        "type": "close_session",
-        "session_id": session.session_id,
-    })
+    async with ws_lock:
+        await agent_ws.send_json({
+            "type": "close_session",
+            "session_id": session.session_id,
+        })
     await asyncio.sleep(0.2)
 
     sock_ssh, bridge_task, bridge_writer = await _open_session_bridge(session, agent_ws)
@@ -337,10 +345,11 @@ async def _do_ssh_connect(
                 # Auth failed — need fresh TCP tunnel + bridge for retry
                 _close_bridge(session, bridge_task, bridge_writer)
 
-                await agent_ws.send_json({
-                    "type": "close_session",
-                    "session_id": session.session_id,
-                })
+                async with ws_lock:
+                    await agent_ws.send_json({
+                        "type": "close_session",
+                        "session_id": session.session_id,
+                    })
                 await asyncio.sleep(0.3)
 
                 sock_ssh, bridge_task, bridge_writer = await _open_session_bridge(session, agent_ws)
@@ -366,10 +375,11 @@ async def _do_ssh_connect(
     finally:
         _close_bridge(session, bridge_task, bridge_writer)
         try:
-            await agent_ws.send_json({
-                "type": "close_session",
-                "session_id": session.session_id,
-            })
+            async with ws_lock:
+                await agent_ws.send_json({
+                    "type": "close_session",
+                    "session_id": session.session_id,
+                })
         except Exception:
             pass
 

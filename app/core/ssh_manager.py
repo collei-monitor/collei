@@ -83,6 +83,8 @@ class SSHSessionManager:
         # server_uuid → set of session_ids
         self._server_sessions: dict[str, set[str]] = {}
         self._lock = asyncio.Lock()
+        # server_uuid → Agent WS 写锁（防止多会话并发写 WS 导致帧交错）
+        self._ws_write_locks: dict[str, asyncio.Lock] = {}
 
     # ── 创建 / 查询 / 删除会话 ────────────────────────────────────────────────
 
@@ -247,12 +249,21 @@ class SSHSessionManager:
             except ImportError:
                 pass
             logger.info("Agent tunnel unregistered: server=%s", server_uuid)
+            self._ws_write_locks.pop(server_uuid, None)
 
     def get_agent_tunnel(self, server_uuid: str) -> WebSocket | None:
         return self._agent_tunnels.get(server_uuid)
 
     def has_agent_tunnel(self, server_uuid: str) -> bool:
         return server_uuid in self._agent_tunnels
+
+    def get_ws_write_lock(self, server_uuid: str) -> asyncio.Lock:
+        """获取指定 server 的 Agent WS 写锁（惰性创建）."""
+        lock = self._ws_write_locks.get(server_uuid)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._ws_write_locks[server_uuid] = lock
+        return lock
 
     # ── Report 响应辅助 ───────────────────────────────────────────────────────
 

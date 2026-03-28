@@ -184,6 +184,7 @@ async def _do_sftp_connect(
 
     认证策略: 证书优先 → 预设密码 → 交互密码输入
     """
+    ws_lock = ssh_manager.get_ws_write_lock(session.server_uuid)
     # ── Phase 1: 证书认证（静默尝试）────────────────────────────
 
     sock_ssh, bridge_task, bridge_writer = await _open_session_bridge(session, agent_ws)
@@ -288,10 +289,11 @@ async def _do_sftp_connect(
                 # 密码错误，继续到 Phase 3 交互式认证
                 _close_bridge(session, bridge_task, bridge_writer)
                 try:
-                    await agent_ws.send_json({
-                        "type": "close_session",
-                        "session_id": session.session_id,
-                    })
+                    async with ws_lock:
+                        await agent_ws.send_json({
+                            "type": "close_session",
+                            "session_id": session.session_id,
+                        })
                 except Exception:
                     pass
                 session.clear_password()
@@ -326,10 +328,11 @@ async def _do_sftp_connect(
         finally:
             _close_bridge(session, bridge_task, bridge_writer)
             try:
-                await agent_ws.send_json({
-                    "type": "close_session",
-                    "session_id": session.session_id,
-                })
+                async with ws_lock:
+                    await agent_ws.send_json({
+                        "type": "close_session",
+                        "session_id": session.session_id,
+                    })
             except Exception:
                 pass
 
@@ -345,10 +348,12 @@ async def _phase3_interactive_auth(
     agent_ws: WebSocket,
 ) -> None:
     """交互式密码认证阶段."""
-    await agent_ws.send_json({
-        "type": "close_session",
-        "session_id": session.session_id,
-    })
+    ws_lock = ssh_manager.get_ws_write_lock(session.server_uuid)
+    async with ws_lock:
+        await agent_ws.send_json({
+            "type": "close_session",
+            "session_id": session.session_id,
+        })
     await asyncio.sleep(0.2)
 
     sock_ssh, bridge_task, bridge_writer = await _open_session_bridge(session, agent_ws)
@@ -398,10 +403,11 @@ async def _phase3_interactive_auth(
                 # 认证失败 — 需要新的 TCP 隧道 + bridge
                 _close_bridge(session, bridge_task, bridge_writer)
 
-                await agent_ws.send_json({
-                    "type": "close_session",
-                    "session_id": session.session_id,
-                })
+                async with ws_lock:
+                    await agent_ws.send_json({
+                        "type": "close_session",
+                        "session_id": session.session_id,
+                    })
                 await asyncio.sleep(0.3)
 
                 sock_ssh, bridge_task, bridge_writer = await _open_session_bridge(session, agent_ws)
@@ -441,10 +447,11 @@ async def _phase3_interactive_auth(
     finally:
         _close_bridge(session, bridge_task, bridge_writer)
         try:
-            await agent_ws.send_json({
-                "type": "close_session",
-                "session_id": session.session_id,
-            })
+            async with ws_lock:
+                await agent_ws.send_json({
+                    "type": "close_session",
+                    "session_id": session.session_id,
+                })
         except Exception:
             pass
 
