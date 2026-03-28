@@ -161,8 +161,18 @@ class ServerFullDetail(BaseModel):
     current_run_id: str | None = None
     total_flow_out: int | None = None
     total_flow_in: int | None = None
-    current_disk_io: str | None = None
-    current_net_io: str | None = None
+    current_disk_io: list = Field(default_factory=list)
+    current_net_io: list = Field(default_factory=list)
+
+    @field_validator('current_disk_io', 'current_net_io', mode='before')
+    @classmethod
+    def parse_io_json(cls, v):
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except (ValueError, TypeError):
+                return []
+        return v if v is not None else []
 
     # 所属分组
     groups: list[GroupRead] = []
@@ -213,8 +223,18 @@ class ServerStatusRead(BaseModel):
     boot_time: int | None = None
     total_flow_out: int | None = None
     total_flow_in: int | None = None
-    current_disk_io: str | None = None
-    current_net_io: str | None = None
+    current_disk_io: list = Field(default_factory=list)
+    current_net_io: list = Field(default_factory=list)
+
+    @field_validator('current_disk_io', 'current_net_io', mode='before')
+    @classmethod
+    def parse_io_json(cls, v):
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except (ValueError, TypeError):
+                return []
+        return v if v is not None else []
 
     model_config = {"from_attributes": True}
 

@@ -33,6 +33,18 @@ from app.models.monitoring import LoadNow
 def _parse_tags(value: str | list | None) -> list:
     if isinstance(value, list):
         return value
+
+
+def _parse_io_json(value: str | list | None) -> list:
+    """将 DB 中的 JSON 字符串解析为列表，已经是列表则直接返回."""
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except (ValueError, TypeError):
+            return []
+    return []
     if isinstance(value, str):
         try:
             return json.loads(value)
@@ -548,8 +560,8 @@ class ServerCache:
                     "boot_time": st.get("boot_time"),
                     "total_flow_out": st.get("total_flow_out"),
                     "total_flow_in": st.get("total_flow_in"),
-                    "current_disk_io": st.get("current_disk_io"),
-                    "current_net_io": st.get("current_net_io"),
+                    "current_disk_io": _parse_io_json(st.get("current_disk_io")),
+                    "current_net_io": _parse_io_json(st.get("current_net_io")),
                 },
                 "load": dict(ld) if ld else None,
                 "traffic_used": self._cycle_traffic.get(uuid),
