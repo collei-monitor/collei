@@ -476,6 +476,14 @@ async def agent_report(
     from app.core.ssh_manager import ssh_manager
     ssh_tunnel_resp = ssh_manager.get_ssh_tunnel_response(server.uuid)
 
+    # ── 终端直连：按需通知 Agent 建立 / 断开终端 WS ──
+    from app.core.terminal_manager import terminal_manager
+    terminal_resp = terminal_manager.get_terminal_response(server.uuid)
+
+    # ── 文件 API：按需通知 Agent 建立 / 断开文件 WS ──
+    from app.core.fileapi_manager import fileapi_manager
+    fileapi_resp = fileapi_manager.get_fileapi_response(server.uuid)
+
     # ── 待执行任务：查询并下发给 Agent ──
     pending_tasks_resp: list[dict] | None = None
     pending_execs = await crud_task.get_pending_executions_for_agent(db, server.uuid)
@@ -496,6 +504,8 @@ async def agent_report(
         is_approved=server.is_approved,
         network_dispatch=network_dispatch_resp,
         ssh_tunnel=ssh_tunnel_resp,
+        terminal=terminal_resp,
+        file_api=fileapi_resp,
         pending_tasks=pending_tasks_resp,
     )
 

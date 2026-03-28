@@ -13,6 +13,8 @@ from app.api.v1.clients.ssh import router as ssh_router
 from app.api.v1.clients.tasks import router as tasks_router
 from app.api.v1.clients.traffic import router as traffic_router
 from app.api.v1.clients.ssh_scripts import router as ssh_scripts_router
+from app.api.v1.clients.terminal import router as terminal_router
+from app.api.v1.clients.files import router as files_router
 
 router = APIRouter(prefix="/clients", tags=["clients"])
 
@@ -27,3 +29,5 @@ router.include_router(ssh_router)
 router.include_router(sftp_router)
 router.include_router(tasks_router)
 router.include_router(ssh_scripts_router)
+router.include_router(terminal_router)
+router.include_router(files_router)

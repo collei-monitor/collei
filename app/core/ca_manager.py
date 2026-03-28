@@ -282,3 +282,43 @@ async def cleanup_old_ca_key() -> bool:
         logger.info("旧 CA 公钥已删除: %s", _OLD_PUB_PATH)
         return True
     return False
+
+
+# ── 控制帧签名（终端 / 文件 API） ────────────────────────────────────────────
+
+import base64
+import secrets
+
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+
+async def sign_control_frame(
+    msg_type: str,
+    session_id: str,
+    extra: str = "",
+) -> dict:
+    """使用 CA 私钥对控制帧进行 Ed25519 签名.
+
+    canonical payload: {type}|{session_id}|{timestamp}|{nonce}[|{extra}]
+
+    返回包含 timestamp, nonce, signature 的字典，可直接合并到控制帧 JSON。
+    """
+    ca_key = await get_ca_key()
+    # 从 asyncssh SSHKey 提取 cryptography Ed25519PrivateKey
+    private_key: Ed25519PrivateKey = ca_key.pyca_key  # type: ignore[assignment]
+
+    timestamp = int(time.time())
+    nonce = secrets.token_urlsafe(16)
+
+    payload = f"{msg_type}|{session_id}|{timestamp}|{nonce}"
+    if extra:
+        payload += f"|{extra}"
+
+    signature = private_key.sign(payload.encode("utf-8"))
+    sig_b64 = base64.b64encode(signature).decode("ascii")
+
+    return {
+        "timestamp": timestamp,
+        "nonce": nonce,
+        "signature": sig_b64,
+    }

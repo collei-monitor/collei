@@ -14,6 +14,8 @@ from app.api.v1.sso import router as sso_router
 from app.api.v1.themes import router as themes_router
 from app.api.v1.ws import router as ws_router
 from app.api.v1.ws_sftp import router as ws_sftp_router
+from app.api.v1.ws_terminal import router as ws_terminal_router
+from app.api.v1.ws_files import router as ws_files_router
 from app.api.v1.ws_ssh import router as ws_ssh_router
 
 api_v1_router = APIRouter(prefix="/api/v1")
@@ -28,6 +30,8 @@ api_v1_router.include_router(config_router)
 api_v1_router.include_router(ws_router)
 api_v1_router.include_router(ws_ssh_router)
 api_v1_router.include_router(ws_sftp_router)
+api_v1_router.include_router(ws_terminal_router)
+api_v1_router.include_router(ws_files_router)
 api_v1_router.include_router(notification_router)
 api_v1_router.include_router(dns_router)
 api_v1_router.include_router(logs_router)
