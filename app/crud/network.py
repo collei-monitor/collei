@@ -234,6 +234,9 @@ async def batch_insert_network_status(
             continue
         values.setdefault("time", int(time.time()))
         values.setdefault("packet_loss", 0)
+        values.setdefault("median_latency", None)
+        values.setdefault("max_latency", None)
+        values.setdefault("min_latency", None)
         values["server_uuid"] = server_uuid
         rows.append(values)
     if rows:
