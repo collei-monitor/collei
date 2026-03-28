@@ -485,7 +485,7 @@ def _is_private_host(hostname: str) -> bool:
     return False
 
 
-def _validate_agent_url(url: str, config_name: str = "agent_url") -> None:
+def _validate_agent_url(url: str, config_name: str = "url") -> None:
     """校验 URL 是否为合法的外部 HTTP(S) URL.
 
     Raises:
@@ -518,10 +518,13 @@ def _validate_agent_url(url: str, config_name: str = "agent_url") -> None:
 @router.get("/download")
 async def agent_download(
     token: str = Query(..., min_length=1, description="reg-token 或 server token"),
-    arch: str = Query("", description="目标架构，如 amd64、arm64；用于替换 agent_url 中的 {arch} 占位符"),
+    url: str = Query(..., min_length=1, description="上游文件完整 URL（由安装脚本传入）"),
     db: AsyncSession = Depends(get_async_session),
 ):
     """代理下载 Agent 二进制 — 流式转发，不在面板本地落盘.
+
+    面板作为纯透明代理：接受安装脚本传入的完整下载 URL，进行 SSRF 校验后
+    流式转发上游响应给客户端。
 
     鉴权:
       - token 匹配 global_registration_token（自动注册模式），或
@@ -529,9 +532,8 @@ async def agent_download(
 
     流程:
       1. 校验 token
-      2. 读取 agent_url 配置并做 SSRF 安全检查
-      3. 如果提供了 arch 参数，替换 agent_url 中的 {arch} 占位符
-      4. 发起上游 HTTP 请求，以流式响应逐 chunk 转发给客户端
+      2. 对传入的 url 做 SSRF 安全检查
+      3. 发起上游 HTTP 请求，以流式响应逐 chunk 转发给客户端
     """
     # ── 鉴权 ──
     valid = False
@@ -553,20 +555,9 @@ async def agent_download(
             detail="Invalid token",
         )
 
-    # ── 读取并校验 agent_url ──
-    agent_url: str = config_cache.get("agent_url", "") or ""
-
-    # 架构模板替换：将 {arch} 占位符替换为实际值
-    _ALLOWED_ARCH = {"amd64", "arm64"}
-    if arch:
-        if arch not in _ALLOWED_ARCH:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Unsupported arch '{arch}'. Allowed: {sorted(_ALLOWED_ARCH)}",
-            )
-        agent_url = agent_url.replace("{arch}", arch)
-
-    _validate_agent_url(agent_url)
+    # ── 校验传入的 URL ──
+    _log.info("agent download: proxying url=%s", url)
+    _validate_agent_url(url)
 
     # ── 最大下载体积 ──
     max_size_str = config_cache.get("agent_download_max_size", "")
@@ -588,14 +579,14 @@ async def agent_download(
     )
 
     try:
-        req = client.build_request("GET", agent_url)
+        req = client.build_request("GET", url)
         upstream = await client.send(req, stream=True)
     except httpx.HTTPError as exc:
         await client.aclose()
         _log.warning("agent download: upstream request failed: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Failed to connect to agent_url upstream",
+            detail="Failed to connect to upstream",
         )
 
     if upstream.status_code != 200:
@@ -606,6 +597,17 @@ async def agent_download(
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Upstream returned HTTP {upstream.status_code}",
+        )
+
+    # Content-Type 防护：拒绝 HTML 响应（常见误配置导致拉到面板首页）
+    upstream_ct = upstream.headers.get("content-type", "")
+    if "text/html" in upstream_ct:
+        await upstream.aclose()
+        await client.aclose()
+        _log.warning("agent download: upstream returned text/html, likely wrong URL")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Upstream returned HTML instead of a binary file",
         )
 
     # 透传关键响应头
