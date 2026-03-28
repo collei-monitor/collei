@@ -154,8 +154,8 @@ class BackgroundTasks:
                         await ws_manager.broadcast(public_nodes, full_nodes)
 
                     # 定时推送状态快照
-                    public_status = server_cache.build_status(include_hidden=False)
-                    full_status = server_cache.build_status(include_hidden=True)
+                    public_status = server_cache.build_status(include_hidden=False, include_io=False)
+                    full_status = server_cache.build_status(include_hidden=True, include_io=True)
                     await ws_manager.broadcast(public_status, full_status)
 
             except Exception as e:

@@ -520,10 +520,11 @@ class ServerCache:
             "groups": groups_data,
         }
 
-    def build_status(self, *, include_hidden: bool = False) -> dict[str, Any]:
+    def build_status(self, *, include_hidden: bool = False, include_io: bool = True) -> dict[str, Any]:
         """构建快照状态数据（type="status"）.
 
         以 uuid 为键的字典形式返回，包含静态信息 + 状态 + 负载。
+        include_io 为 False 时不返回 current_disk_io / current_net_io（游客不可见）。
         """
         now = int(time.time())
         servers_data: dict[str, dict[str, Any]] = {}
@@ -541,6 +542,17 @@ class ServerCache:
 
             ld = self._loads.get(uuid)
 
+            status_dict: dict[str, Any] = {
+                "status": st["status"],
+                "last_online": st.get("last_online"),
+                "boot_time": st.get("boot_time"),
+                "total_flow_out": st.get("total_flow_out"),
+                "total_flow_in": st.get("total_flow_in"),
+            }
+            if include_io:
+                status_dict["current_disk_io"] = _parse_io_json(st.get("current_disk_io"))
+                status_dict["current_net_io"] = _parse_io_json(st.get("current_net_io"))
+
             servers_data[uuid] = {
                 "name": srv.get("name"),
                 "top": srv.get("top"),
@@ -554,15 +566,7 @@ class ServerCache:
                 "disk_total": srv.get("disk_total"),
                 "virtualization": srv.get("virtualization"),
                 "enable_statistics_mode": srv.get("enable_statistics_mode"),
-                "status": {
-                    "status": st["status"],
-                    "last_online": st.get("last_online"),
-                    "boot_time": st.get("boot_time"),
-                    "total_flow_out": st.get("total_flow_out"),
-                    "total_flow_in": st.get("total_flow_in"),
-                    "current_disk_io": _parse_io_json(st.get("current_disk_io")),
-                    "current_net_io": _parse_io_json(st.get("current_net_io")),
-                },
+                "status": status_dict,
                 "load": dict(ld) if ld else None,
                 "traffic_used": self._cycle_traffic.get(uuid),
             }
