@@ -89,21 +89,24 @@ async def list_servers(
     return result
 
 
-@router.get("/servers/{uuid}", response_model=ServerRead)
+@router.get("/servers/{uuid}", response_model=ServerFullDetail)
 async def get_server(
     uuid: str,
     _current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_session),
 ):
-    """获取单个服务器详情."""
+    """获取单个服务器完整详情（含状态、分组、计费信息）."""
     server = await crud.get_server_by_uuid(db, uuid)
     if not server:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Server not found")
-    return server
+    st = await crud.get_server_status(db, uuid)
+    groups = await crud.get_server_groups(db, uuid)
+    billing_brief = server_cache.build_billing_brief(uuid)
+    return build_server_full_detail(server, st, groups, billing_brief)
 
 
-@router.put("/servers/{uuid}", response_model=ServerRead)
+@router.put("/servers/{uuid}", response_model=ServerFullDetail)
 async def update_server(
     uuid: str,
     body: ServerUpdate,
@@ -128,7 +131,10 @@ async def update_server(
         update_data["tags"] = _json.dumps(update_data["tags"], ensure_ascii=False)
     updated = await crud.update_server(db, uuid, **update_data)
     server_cache.update_server(uuid, update_data)
-    return updated
+    st = await crud.get_server_status(db, uuid)
+    groups = await crud.get_server_groups(db, uuid)
+    billing_brief = server_cache.build_billing_brief(uuid)
+    return build_server_full_detail(updated, st, groups, billing_brief)
 
 
 @router.post("/servers/batch/update-tops", response_model=ServerTopUpdateResponse)
