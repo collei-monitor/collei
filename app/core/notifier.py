@@ -14,11 +14,14 @@ from typing import Any
 
 import httpx
 
+from app.core.audit import audit
+
 logger = logging.getLogger(__name__)
 
 
 async def send_notification(channel: dict[str, Any], message: str) -> None:
     """根据渠道配置发送通知."""
+    channel_name = channel.get("name", "unknown")
     provider_type = (channel.get("provider_type") or "").lower()
     addition_raw = channel.get("addition")
     target = channel.get("target")
@@ -40,8 +43,27 @@ async def send_notification(channel: dict[str, Any], message: str) -> None:
             await _send_email(addition, target, message)
         else:
             logger.warning("不支持的通知提供商: %s", provider_type)
+            await audit.background(
+                msg_type="alert", level="warning",
+                message="通知发送失败",
+                detail=f"channel={channel_name}, type={provider_type}, reason=不支持的提供商",
+                source="notifier",
+            )
+            return
+        # 发送成功
+        await audit.background(
+            msg_type="alert", message="通知发送成功",
+            detail=f"channel={channel_name}, type={provider_type}",
+            source="notifier",
+        )
     except Exception:
-        logger.exception("通知发送失败 [%s]", channel.get("name"))
+        logger.exception("通知发送失败 [%s]", channel_name)
+        await audit.background(
+            msg_type="alert", level="warning",
+            message="通知发送失败",
+            detail=f"channel={channel_name}, type={provider_type}",
+            source="notifier",
+        )
 
 
 async def _send_telegram(

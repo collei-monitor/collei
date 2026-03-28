@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config_cache import config_cache
 from app.core.geoip import DEFAULT_DB, lookup_region, remap_region
+from app.core.audit import audit
 from app.core.server_cache import server_cache
 from app.crud import clients as crud_clients
 from app.crud import monitoring as crud_monitoring
@@ -114,6 +115,11 @@ async def agent_register(
         name=body.name,
         is_approved=0,  # 自动注册需审核
         hardware_info=hardware,
+    )
+    await audit.emit(
+        db, msg_type="server", message="Agent 自动注册",
+        detail=f"name={body.name}, uuid={server.uuid}",
+        source="agent", server_uuid=server.uuid,
     )
 
     return AgentRegisterResponse(
@@ -216,6 +222,7 @@ async def agent_report(
     """
     # 优先从内存缓存查 token（缓存仅含 is_approved==1 的服务器）
     cached_uuid = server_cache.get_uuid_by_token(body.token)
+    cached_info: dict | None = None
     if cached_uuid:
         cached_info = server_cache._servers[cached_uuid]
 
@@ -263,6 +270,21 @@ async def agent_report(
             region = await _resolve_region(body.ipv4, body.ipv6, db)
             if region:
                 hardware_fields["region"] = region
+
+    # ── 检测 Agent 版本变更 ──
+    if body.version is not None:
+        old_version = (
+            cached_info.get("version") if cached_uuid
+            else getattr(server, "version", None)
+        )
+        if old_version and old_version != body.version:
+            await audit.emit(
+                db, msg_type="server",
+                message="Agent 版本变更",
+                detail=f"{old_version} → {body.version}",
+                source="agent",
+                server_uuid=server.uuid,
+            )
 
     if hardware_fields:
         await crud_clients.update_server_hardware(

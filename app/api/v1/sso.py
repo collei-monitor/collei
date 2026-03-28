@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_client_ip
 from app.core.alert_engine import alert_engine
+from app.core.audit import audit
 from app.core.config import settings
 from app.core.security import create_access_token, generate_session_token
 from app.core.sso_factory import create_sso
@@ -159,6 +160,10 @@ async def sso_callback(
         ip=client_ip,
         user_agent=user_agent,
         login_method=f"sso:{provider_name}",
+    )
+    await audit.emit(
+        db, msg_type="auth", message="SSO 登录",
+        detail=f"provider={provider_name}", ip=client_ip, user_uuid=user.uuid,
     )
 
     # 7) 构建前端重定向 URL，设置 cookie 并重定向

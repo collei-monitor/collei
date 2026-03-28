@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_client_ip, get_current_user, get_optional_user
 from app.core.alert_engine import alert_engine
+from app.core.audit import audit
 from app.core.config import settings
 from app.core.security import (
     create_access_token,
@@ -157,6 +158,10 @@ async def login(
     user = await crud.get_user_by_username(db, body.username)
     if user is None or not verify_password(body.password, user.passwd):
         await crud.record_login_attempt(db, ip_address=client_ip, username=body.username, success=False)
+        await audit.emit(
+            db, level="warning", msg_type="auth",
+            message="登录失败", detail=f"username={body.username}", ip=client_ip,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
@@ -197,6 +202,10 @@ async def login(
                 user_agent=request.headers.get("user-agent"),
                 login_method="password+2fa",
             )
+            await audit.emit(
+                db, msg_type="auth", message="用户登录",
+                detail="method=password+2fa", ip=client_ip, user_uuid=user.uuid,
+            )
             return token
 
         challenge = generate_session_token()
@@ -231,6 +240,10 @@ async def login(
         ip=client_ip,
         user_agent=request.headers.get("user-agent"),
         login_method="password",
+    )
+    await audit.emit(
+        db, msg_type="auth", message="用户登录",
+        detail="method=password", ip=client_ip, user_uuid=user.uuid,
     )
 
     return token
@@ -288,6 +301,11 @@ async def login_with_2fa(
             attempt_type="2fa",
             success=False,
         )
+        await audit.emit(
+            db, level="warning", msg_type="auth",
+            message="登录失败", detail=f"username={user.username}, stage=2fa",
+            ip=client_ip, user_uuid=user.uuid,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid 2FA code",
@@ -312,6 +330,10 @@ async def login_with_2fa(
         ip=client_ip,
         user_agent=request.headers.get("user-agent"),
         login_method="password+2fa",
+    )
+    await audit.emit(
+        db, msg_type="auth", message="用户登录",
+        detail="method=password+2fa", ip=client_ip, user_uuid=user.uuid,
     )
     return token
 
@@ -345,6 +367,10 @@ async def logout(
         samesite=settings.COOKIE_SAMESITE,
     )
 
+    await audit.emit(
+        db, msg_type="auth", message="用户登出",
+        ip=get_client_ip(request), user_uuid=current_user.uuid,
+    )
     return MessageResponse(message="Logged out successfully")
 
 
@@ -413,6 +439,16 @@ async def update_me(
             status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
 
     updated = await crud.update_user(db, current_user.uuid, **update_data)
+
+    # 审计: 记录用户信息变更
+    changed_fields = [k for k in update_data if k != "passwd"]
+    if "passwd" in update_data:
+        changed_fields.append("密码")
+    await audit.emit(
+        db, msg_type="auth",
+        message=f"修改用户信息: {', '.join(changed_fields)}",
+        user_uuid=current_user.uuid,
+    )
     return _user_to_read(updated)  # type: ignore[arg-type]
 
 
@@ -440,6 +476,10 @@ async def revoke_session(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
     await crud.delete_session(db, session_id)
+    await audit.emit(
+        db, msg_type="auth", message="撤销会话",
+        detail=f"session_id={session_id}", user_uuid=current_user.uuid,
+    )
     return MessageResponse(message="Session revoked")
 
 
@@ -483,6 +523,10 @@ async def verify_and_activate_2fa(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP code")
 
     await crud.update_user(db, current_user.uuid, two_factor=secret)
+    await audit.emit(
+        db, msg_type="auth", message="启用 2FA",
+        user_uuid=current_user.uuid,
+    )
     return MessageResponse(message="2FA activated successfully")
 
 
@@ -496,6 +540,10 @@ async def disable_2fa(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="2FA not enabled")
     await crud.update_user(db, current_user.uuid, two_factor=None)
+    await audit.emit(
+        db, msg_type="auth", message="禁用 2FA",
+        user_uuid=current_user.uuid,
+    )
     return MessageResponse(message="2FA disabled")
 
 
@@ -561,6 +609,11 @@ async def create_or_update_oidc(
         scope=body.scope,
         addition=body.addition,
     )
+    await audit.emit(
+        db, msg_type="auth", message="创建/更新 OIDC 提供商",
+        detail=f"name={body.name}, type={body.provider_type}",
+        user_uuid=_current_user.uuid,
+    )
     return _provider_to_read(provider)
 
 
@@ -574,4 +627,8 @@ async def remove_oidc(
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail="OIDC provider not found")
+    await audit.emit(
+        db, msg_type="auth", message="删除 OIDC 提供商",
+        detail=f"name={name}", user_uuid=_current_user.uuid,
+    )
     return MessageResponse(message=f"OIDC provider '{name}' deleted")

@@ -189,15 +189,7 @@ class BackgroundTasks:
                     result = await session.execute(
                         delete(LoadNow).where(LoadNow.time < cutoff)
                     )
-                    deleted = result.rowcount or 0
                     await session.commit()
-
-                    if deleted:
-                        await audit.background(
-                            msg_type="task",
-                            message=f"已清理 {deleted} 条过期 load_now 记录",
-                            source="purge_load_now",
-                        )
 
             except Exception as e:
                 await audit.error(
@@ -232,15 +224,7 @@ class BackgroundTasks:
                     result = await session.execute(
                         delete(NetworkStatus).where(NetworkStatus.time < cutoff)
                     )
-                    deleted = result.rowcount or 0
                     await session.commit()
-
-                    if deleted:
-                        await audit.background(
-                            msg_type="task",
-                            message=f"已清理 {deleted} 条过期网络探测记录",
-                            source="purge_network",
-                        )
 
             except Exception as e:
                 await audit.error(
@@ -355,16 +339,10 @@ class BackgroundTasks:
                 cutoff = int(time.time()) - retain_hours * 3600
 
                 async with async_session_factory() as session:
-                    deleted = await crud_monitoring.purge_old_load_minute(
+                    await crud_monitoring.purge_old_load_minute(
                         session, before=cutoff
                     )
                     await session.commit()
-                    if deleted:
-                        await audit.background(
-                            msg_type="task",
-                            message=f"已清理 {deleted} 条过期 load_minute 记录",
-                            source="purge_load_minute",
-                        )
 
             except Exception as e:
                 await audit.error(
@@ -398,16 +376,10 @@ class BackgroundTasks:
                 cutoff = int(time.time()) - retain_hours * 3600
 
                 async with async_session_factory() as session:
-                    deleted = await crud_monitoring.purge_old_load_hour(
+                    await crud_monitoring.purge_old_load_hour(
                         session, before=cutoff
                     )
                     await session.commit()
-                    if deleted:
-                        await audit.background(
-                            msg_type="task",
-                            message=f"已清理 {deleted} 条过期 load_hour 记录",
-                            source="purge_load_hour",
-                        )
 
             except Exception as e:
                 await audit.error(

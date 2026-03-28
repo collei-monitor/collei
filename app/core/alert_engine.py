@@ -23,6 +23,7 @@ from typing import Any
 from sqlalchemy import select, update as sa_update
 
 from app.core.server_cache import server_cache
+from app.core.audit import audit
 from app.db.session import async_session_factory
 from app.models.clients import ServerGroup
 from app.models.notification import (
@@ -451,6 +452,15 @@ class AlertEngine:
             "🔴 告警: %s | %s | %s=%.4f",
             rule["name"], server_name, rule["metric"], value,
         )
+        await audit.background(
+            msg_type="alert", message="告警触发并通知",
+            detail=(
+                f"rule={rule['name']}, server={server_uuid}, "
+                f"metric={rule['metric']}, value={value:.4f}, "
+                f"channels={sorted(channel_ids)}"
+            ),
+            server_uuid=server_uuid, source="alert_engine",
+        )
 
     async def _on_resolved(
         self,
@@ -494,6 +504,14 @@ class AlertEngine:
         logger.info(
             "🟢 恢复: %s | %s | %s=%.4f",
             rule["name"], server_name, rule["metric"], value,
+        )
+        await audit.background(
+            msg_type="alert", message="告警恢复并通知",
+            detail=(
+                f"rule={rule['name']}, server={server_uuid}, "
+                f"channels={sorted(channel_ids)}"
+            ),
+            server_uuid=server_uuid, source="alert_engine",
         )
 
     async def _notify(self, channel_ids: set[int], message: str) -> None:

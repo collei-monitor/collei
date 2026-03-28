@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
+from app.core.audit import audit
 from app.core.config_cache import config_cache
 from app.core.geoip import DB_FILES, _DISPUTED_REMAP, list_available_dbs, lookup_region
 from app.crud import config as crud_config
@@ -131,6 +132,11 @@ async def set_configs_batch(
         await batch_remap_regions(db, _DISPUTED_REMAP)
         server_cache.remap_regions(_DISPUTED_REMAP)
 
+    await audit.emit(
+        db, msg_type="config", message="批量修改配置",
+        detail=f"keys={[item.key for item in body]}",
+        user_uuid=_current_user.uuid,
+    )
     return results
 
 
@@ -210,6 +216,13 @@ async def set_config(
         from app.core.server_cache import server_cache
         await batch_remap_regions(db, _DISPUTED_REMAP)
         server_cache.remap_regions(_DISPUTED_REMAP)
+    # 审计: 敏感 key 不记录具体值
+    _SENSITIVE_KEYS = {"global_registration_token"}
+    detail = f"key={key}" if key in _SENSITIVE_KEYS else f"key={key}, value={body.value}"
+    await audit.emit(
+        db, msg_type="config", message="修改配置",
+        detail=detail, user_uuid=_current_user.uuid,
+    )
     return ConfigItem(key=config.key, value=config.value)
 
 
@@ -232,4 +245,8 @@ async def clear_config_value(
             detail=f"Config key '{key}' not found",
         )
     config_cache.delete(key)
+    await audit.emit(
+        db, msg_type="config", message="清空配置",
+        detail=f"key={key}", user_uuid=_current_user.uuid,
+    )
     return ConfigItem(key=config.key, value=config.value)

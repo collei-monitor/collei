@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.api.v1.clients._helpers import build_server_brief, build_server_full_detail
+from app.core.audit import audit
 from app.core.server_cache import server_cache
 from app.crud import clients as crud
 from app.db.session import get_async_session
@@ -65,6 +66,11 @@ async def create_server(
             "hidden", "is_approved", "created_at", "token", "enable_statistics_mode",
         )
     })
+    await audit.emit(
+        db, msg_type="server", message="创建服务器",
+        detail=f"name={body.name}, uuid={server.uuid}",
+        user_uuid=_current_user.uuid, server_uuid=server.uuid,
+    )
     return ServerCreateResponse(
         uuid=server.uuid,
         name=server.name,
@@ -131,6 +137,11 @@ async def update_server(
         update_data["tags"] = _json.dumps(update_data["tags"], ensure_ascii=False)
     updated = await crud.update_server(db, uuid, **update_data)
     server_cache.update_server(uuid, update_data)
+    await audit.emit(
+        db, msg_type="server", message="更新服务器",
+        detail=f"uuid={uuid}, fields={list(update_data.keys())}",
+        user_uuid=_current_user.uuid, server_uuid=uuid,
+    )
     st = await crud.get_server_status(db, uuid)
     groups = await crud.get_server_groups(db, uuid)
     billing_brief = server_cache.build_billing_brief(uuid)
@@ -178,6 +189,11 @@ async def delete_server(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Server not found")
     server_cache.remove_server(uuid)
+    await audit.emit(
+        db, msg_type="server", message="删除服务器",
+        detail=f"uuid={uuid}",
+        user_uuid=_current_user.uuid, server_uuid=uuid,
+    )
     return MessageResponse(message="Server deleted")
 
 
@@ -207,6 +223,11 @@ async def approve_server(
         "hidden": server.hidden, "is_approved": 1,
         "created_at": server.created_at,
     })
+    await audit.emit(
+        db, msg_type="server", message="批准服务器",
+        detail=f"uuid={uuid}, name={server.name}",
+        user_uuid=_current_user.uuid, server_uuid=uuid,
+    )
     return updated
 
 
@@ -222,6 +243,11 @@ async def regenerate_token(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Server not found")
     updated = await crud.regenerate_server_token(db, uuid)
+    await audit.emit(
+        db, msg_type="server", message="重生成服务器 Token",
+        detail=f"uuid={uuid}",
+        user_uuid=_current_user.uuid, server_uuid=uuid,
+    )
     return updated
 
 
@@ -261,4 +287,9 @@ async def set_server_groups(
             )
     groups = await crud.set_server_groups(db, uuid, body.group_ids)
     server_cache.set_server_groups(uuid, body.group_ids)
+    await audit.emit(
+        db, msg_type="server", message="设置服务器分组",
+        detail=f"uuid={uuid}, groups={body.group_ids}",
+        user_uuid=_current_user.uuid, server_uuid=uuid,
+    )
     return groups
