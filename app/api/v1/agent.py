@@ -56,6 +56,12 @@ _SCRIPT_MAX_SIZE = 1 * 1024 * 1024  # 1 MB — 安装脚本体积上限
 _UPSTREAM_CONNECT_TIMEOUT = 15  # 秒
 _UPSTREAM_READ_TIMEOUT = 300  # 秒
 
+_DEFAULT_SCRIPT_BASE_URL = "https://raw.githubusercontent.com/collei-monitor/collei-agent/main/"
+_PLATFORM_SCRIPT_MAP: dict[str, str] = {
+    "windows": "install.ps1",
+}
+_DEFAULT_SCRIPT_NAME = "install.sh"
+
 
 # ─── 辅助函数 ─────────────────────────────────────────────────────────────────
 
@@ -776,12 +782,14 @@ async def agent_download(
 @router.get("/install-script")
 async def agent_install_script(
     token: str = Query(..., min_length=1, description="reg-token 或 server token"),
+    platform: str = Query("linux", description="目标平台: linux / windows"),
     db: AsyncSession = Depends(get_async_session),
 ):
     """代理下载安装脚本 — 流式转发，不在面板本地落盘.
 
     鉴权逻辑与 /agent/download 一致。
-    上游 URL 从 agent_install_script_url 配置读取。
+    上游 URL 优先从 agent_install_script_url 配置读取；
+    配置缺失时根据 platform 参数拼接默认 GitHub 源。
     """
     # ── 鉴权 ──
     valid = False
@@ -802,8 +810,11 @@ async def agent_install_script(
         )
 
     # ── 读取并校验脚本 URL ──
-    from app.core.config import settings as _settings
-    script_url: str = config_cache.get("agent_install_script_url", "") or _settings.AGENT_INSTALL_SCRIPT_URL
+    script_url: str = config_cache.get("agent_install_script_url", "") or ""
+    if not script_url:
+        # 配置缺失 — 根据平台拼接默认 GitHub 源
+        script_name = _PLATFORM_SCRIPT_MAP.get(platform.lower(), _DEFAULT_SCRIPT_NAME)
+        script_url = _DEFAULT_SCRIPT_BASE_URL + script_name
     _validate_agent_url(script_url, "agent_install_script_url")
 
     # ── 流式代理 ──
@@ -869,9 +880,17 @@ async def agent_install_script(
             await upstream.aclose()
             await client.aclose()
 
+    # 根据实际脚本类型设置响应头
+    if script_url.endswith(".ps1"):
+        resp_media = "text/plain"
+        resp_filename = "install.ps1"
+    else:
+        resp_media = "text/x-shellscript"
+        resp_filename = "install.sh"
+
     return StreamingResponse(
         _stream_script(),
-        media_type="text/x-shellscript",
-        headers={"Content-Disposition": "inline; filename=\"install.sh\""},
+        media_type=resp_media,
+        headers={"Content-Disposition": f'inline; filename="{resp_filename}"'},
     )
 
