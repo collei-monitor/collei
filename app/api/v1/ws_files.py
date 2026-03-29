@@ -242,6 +242,7 @@ async def agent_files_ws(
 
         # 消息循环
         _pending_sid: str | None = None
+        _pending_remaining: int = 0  # 剩余待接收字节数
         while True:
             raw = await ws.receive()
             msg_type = raw.get("type", "")
@@ -273,8 +274,9 @@ async def agent_files_ws(
                                 pass
 
                 elif frame_type == "read_resp":
-                    # read_resp 后跟 binary 帧
+                    # read_resp 后跟一个或多个 binary 帧（大文件分块）
                     _pending_sid = sid
+                    _pending_remaining = msg.get("size", 0)
                     if sid:
                         s = fileapi_manager.get_session(sid)
                         if s and s.user_ws:
@@ -285,6 +287,9 @@ async def agent_files_ws(
                                 pass
 
                 elif frame_type == "error":
+                    # 错误响应同时清除待接收状态
+                    _pending_sid = None
+                    _pending_remaining = 0
                     if sid:
                         s = fileapi_manager.get_session(sid)
                         if s and s.user_ws:
@@ -297,7 +302,7 @@ async def agent_files_ws(
                     pass
 
             elif "bytes" in raw and raw["bytes"]:
-                # Agent → 前端: 文件读取 binary payload
+                # Agent → 前端: 文件读取 binary payload（可能分多个 chunk）
                 if _pending_sid:
                     s = fileapi_manager.get_session(_pending_sid)
                     if s and s.user_ws:
@@ -306,7 +311,10 @@ async def agent_files_ws(
                             await s.user_ws.send_bytes(raw["bytes"])
                         except Exception:
                             pass
-                    _pending_sid = None
+                    _pending_remaining -= len(raw["bytes"])
+                    if _pending_remaining <= 0:
+                        _pending_sid = None
+                        _pending_remaining = 0
 
     except WebSocketDisconnect:
         pass
