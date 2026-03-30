@@ -46,6 +46,7 @@ _WRITABLE_KEYS = {
     "agent_download_max_size",
     "custom_headers",
     "custom_body",
+    "allow_password_login",
 }
 
 # 统一地区标识的合法值
@@ -116,6 +117,14 @@ async def set_configs_batch(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"Invalid disputed_territory value '{item.value}'. Must be '0' or '1'",
             )
+        if item.key == "allow_password_login" and item.value == "false":
+            from app.crud.auth import get_enabled_oidc_providers
+            providers = await get_enabled_oidc_providers(db)
+            if not providers:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Cannot disable password login: no SSO/OIDC providers are enabled",
+                )
 
     # ── 逐项写入 ──
     results: list[ConfigItem] = []
@@ -209,6 +218,15 @@ async def set_config(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Invalid disputed_territory value '{body.value}'. Must be '0' or '1'",
         )
+    # 禁止密码登录时需确保至少有一个已启用的 SSO/OIDC 提供商
+    if key == "allow_password_login" and body.value == "false":
+        from app.crud.auth import get_enabled_oidc_providers
+        providers = await get_enabled_oidc_providers(db)
+        if not providers:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Cannot disable password login: no SSO/OIDC providers are enabled",
+            )
     config = await crud_config.set_config(db, key, body.value)
     config_cache.set(key, config.value)
     # disputed_territory 开启时：批量修改数据库中已有的争议地区代码

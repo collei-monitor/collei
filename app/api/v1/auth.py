@@ -29,6 +29,7 @@ from app.api.deps import get_client_ip, get_current_user, get_optional_user
 from app.core.alert_engine import alert_engine
 from app.core.audit import audit
 from app.core.config import settings
+from app.core.config_cache import config_cache
 from app.core.security import (
     create_access_token,
     create_ws_token,
@@ -70,6 +71,7 @@ def _user_to_read(
     global_registration_token: str | None = None,
     agent_url: str | None = None,
     providers: list[SSOProviderPublic] | None = None,
+    allow_password_login: bool = True,
 ) -> UserRead:
     return UserRead(
         uuid=user.uuid,
@@ -82,6 +84,7 @@ def _user_to_read(
         global_registration_token=global_registration_token,
         agent_url=agent_url,
         providers=providers or [],
+        allow_password_login=allow_password_login,
     )
 
 
@@ -145,6 +148,13 @@ async def login(
 ):
     """密码登录接口，支持防暴力破解 & 2FA."""
     client_ip = get_client_ip(request)
+
+    # 0) 检查是否允许密码登录
+    if config_cache.get("allow_password_login", "true") == "false":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Password login is disabled",
+        )
 
     # 1) 防暴力破解检查
     failed_count = await crud.count_failed_attempts(db, client_ip)
@@ -258,6 +268,13 @@ async def login_with_2fa(
 ):
     """二阶段登录：提交 challenge + TOTP 以完成登录."""
     client_ip = get_client_ip(request)
+
+    # 检查是否允许密码登录
+    if config_cache.get("allow_password_login", "true") == "false":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Password login is disabled",
+        )
 
     failed_count = await crud.count_failed_attempts(db, client_ip)
     if failed_count >= settings.LOGIN_ATTEMPT_LIMIT:
@@ -392,10 +409,15 @@ async def get_me(
         for p in enabled_providers
     ]
 
+    allow_pw = config_cache.get("allow_password_login", "true") != "false"
+
     if current_user is None:
         return JSONResponse(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            content={"providers": [p.model_dump() for p in providers]},
+            content={
+                "providers": [p.model_dump() for p in providers],
+                "allow_password_login": allow_pw,
+            },
         )
 
     from app.crud import config as crud_config
@@ -409,6 +431,7 @@ async def get_me(
         global_registration_token=global_reg_token,
         agent_url=agent_url,
         providers=providers,
+        allow_password_login=allow_pw,
     )
 
 

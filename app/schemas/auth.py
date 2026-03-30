@@ -59,6 +59,7 @@ class UserRead(BaseModel):
     global_registration_token: str | None = None
     agent_url: str | None = None
     providers: list[SSOProviderPublic] = Field(default_factory=list, description="已启用的 SSO 登录方式")
+    allow_password_login: bool = True
 
     model_config = {"from_attributes": True}
 

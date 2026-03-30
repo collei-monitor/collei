@@ -103,6 +103,7 @@ _DEFAULT_CONFIGS: dict[str, str] = {
     "agent_download_max_size": "209715200",
     "custom_headers": "",
     "custom_body": "",
+    "allow_password_login": "true",
 }
 
 
