@@ -223,6 +223,7 @@ step "7/8 数据库迁移"
 
 cd "$INSTALL_DIR"
 info "执行 alembic upgrade head..."
+set -a; . "$INSTALL_DIR/.env"; set +a
 "$INSTALL_DIR/.venv/bin/alembic" upgrade head
 info "数据库迁移完成"
 
@@ -252,7 +253,6 @@ RestartSec=5
 # 安全加固
 NoNewPrivileges=true
 ProtectSystem=strict
-ProtectHome=true
 ReadWritePaths=${DATA_DIR}
 ReadWritePaths=${INSTALL_DIR}
 PrivateTmp=true
