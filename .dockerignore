@@ -18,3 +18,11 @@ frontend/
 # 文档
 markdown/
 *.md
+
+# 测试
+test/
+
+# 构建残留
+build/
+dist/
+*.egg-info/

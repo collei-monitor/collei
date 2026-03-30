@@ -27,7 +27,9 @@ RUN mkdir -p app && touch app/__init__.py && \
 COPY . .
 
 # ── 安装本包（注册 CLI 入口点 collei，跳过已缓存的依赖）─────────────────
-RUN pip install --no-cache-dir --no-deps .
+RUN pip install --no-cache-dir --no-deps . && \
+    rm -rf /app/build && \
+    pip cache purge 2>/dev/null; true
 
 # ── 下载预构建前端 ────────────────────────────────────────────────────────
 ARG FRONTEND_VERSION=latest
@@ -43,7 +45,8 @@ RUN set -e; \
       | tar xz -C frontend/dist
 
 # ── 预编译字节码 + 创建数据目录 ────────────────────────────────
-RUN python -m compileall -q . && \
+RUN pip uninstall -y pip setuptools 2>/dev/null; true && \
+    python -m compileall -q . && \
     mkdir -p /data && \
     chmod +x /app/entrypoint.sh
 
