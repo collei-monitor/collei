@@ -10,8 +10,33 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import getpass
+import os
+import secrets
 import sys
+
+
+def _preload_env() -> None:
+    """尝试从 /data/.secrets 加载密钥环境变量（Docker 容器场景）.
+
+    docker exec 新进程不会继承 entrypoint.sh export 的变量，
+    因此需要手动加载。CLI 本身不使用 JWT，读取失败时设置
+    dummy key 仅用于抑制 Settings 校验警告。
+    """
+    secrets_path = os.environ.get("COLLEI_DATA_DIR", "/data") + "/.secrets"
+    try:
+        with open(secrets_path) as f:
+            for line in f:
+                line = line.strip()
+                if "=" in line and not line.startswith("#"):
+                    key, _, val = line.partition("=")
+                    os.environ.setdefault(key.strip(), val.strip().strip("'\""))
+    except OSError:
+        pass
+    # CLI 不需要 JWT，若仍未加载则设置 dummy 抑制警告
+    os.environ.setdefault("COLLEI_SECRET_KEY", "cli-not-used")
+
+
+_preload_env()
 
 
 # ── 公共辅助 ──────────────────────────────────────────────────────────────────
@@ -43,15 +68,10 @@ async def _cmd_passwd(args: argparse.Namespace) -> None:
 
     # 获取密码
     password = args.password
+    generated = False
     if not password:
-        password = getpass.getpass("新密码: ")
-        confirm = getpass.getpass("确认密码: ")
-        if password != confirm:
-            print("错误: 两次输入的密码不一致", file=sys.stderr)
-            sys.exit(1)
-    if not password:
-        print("错误: 密码不能为空", file=sys.stderr)
-        sys.exit(1)
+        password = secrets.token_urlsafe(12)[:12]
+        generated = True
 
     async with async_session_factory() as session:
         user = await _get_target_user(session, args.username)
@@ -60,7 +80,11 @@ async def _cmd_passwd(args: argparse.Namespace) -> None:
         await delete_user_sessions(session, user.uuid)
         await session.commit()
 
-    print(f"已重置用户 '{user.username}' 的密码，所有现有会话已失效。")
+    if generated:
+        print(f"已为用户 '{user.username}' 生成新密码: {password}")
+    else:
+        print(f"已重置用户 '{user.username}' 的密码。")
+    print("所有现有会话已失效。")
 
 
 # ── disable-2fa ───────────────────────────────────────────────────────────────
@@ -126,7 +150,7 @@ def main() -> None:
     # passwd
     p_passwd = subparsers.add_parser("passwd", help="重置用户密码")
     p_passwd.add_argument("--username", help="目标用户名（默认: 第一个用户）")
-    p_passwd.add_argument("--password", help="新密码（不指定则交互式输入）")
+    p_passwd.add_argument("--password", help="新密码（不指定则自动生成 12 位随机密码）")
 
     # disable-2fa
     p_2fa = subparsers.add_parser("disable-2fa", help="关闭用户的两步验证")
