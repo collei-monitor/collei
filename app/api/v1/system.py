@@ -60,8 +60,8 @@ _RESTORE_DIR = _DATA_DIR / ".restore"
 _RESTORE_PENDING = _DATA_DIR / ".restore-pending"
 
 # 需要备份的文件（相对于 DATA_DIR）
-_REQUIRED_FILES = {"collei.db", ".secrets", "ssh_ca_key.enc"}
-_OPTIONAL_FILES = {"ssh_ca_key.pub", "ssh_ca_key_old.pub"}
+_REQUIRED_FILES = {"collei.db", ".secrets"}
+_OPTIONAL_FILES = {"ssh_ca_key.enc", "ssh_ca_key.pub", "ssh_ca_key_old.pub"}
 
 # 历史监控数据表
 _MONITORING_TABLES = ("load_now", "load_minute", "load_hour", "traffic_hourly_stats")
@@ -125,12 +125,14 @@ def _sqlite_backup(source_path: str, dest_path: str) -> None:
 
 def _purge_monitoring_tables(db_path: str) -> None:
     """从备份数据库中清除历史监控数据表内容."""
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, isolation_level=None)
     try:
         for table in _MONITORING_TABLES:
-            conn.execute(f"DELETE FROM [{table}]")  # noqa: S608
+            try:
+                conn.execute(f"DELETE FROM [{table}]")  # noqa: S608
+            except sqlite3.OperationalError:
+                pass  # 表不存在时跳过
         conn.execute("VACUUM")
-        conn.commit()
     finally:
         conn.close()
 
