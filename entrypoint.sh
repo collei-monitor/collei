@@ -6,6 +6,11 @@ cd /app
 DATA_DIR="${COLLEI_DATA_DIR:-/data}"
 SECRETS_FILE="$DATA_DIR/.secrets"
 
+# ── 0. 夺回数据卷所有权 ──────────────────────────────────────────────────
+#   容器 cap_drop ALL 后 root 缺少 DAC_OVERRIDE，无法读写非 root 文件。
+#   靠保留的 CHOWN 能力先将 /data 夺回 root，操作完毕后再交给 collei。
+chown -R root:root "$DATA_DIR"
+
 # ── 1. 复制内置数据文件（仅首次或文件不存在时）────────────────────────────
 #   注意：必须在 chown 之前执行，因为容器 cap_drop ALL 后 root 缺少
 #   DAC_OVERRIDE，无法向非 root 目录写入。
@@ -48,6 +53,9 @@ alembic upgrade head
 
 # ── 4. 修正数据卷权限并降权启动 ───────────────────────────────────────────
 #   chown 放在最后，确保之前所有写操作（cp/secrets/migrate）均以 root 完成。
+#   .secrets 保留 root 所有：容器 cap_drop ALL 后 root 缺少 DAC_OVERRIDE，
+#   重启时需要以 root 身份读取该文件。
 echo ">>> Fixing /data ownership & starting Collei (port 22333)..."
 chown -R collei:collei "$DATA_DIR"
+[ -f "$SECRETS_FILE" ] && chown root:root "$SECRETS_FILE"
 exec gosu collei uvicorn main:app --host 0.0.0.0 --port 22333 --workers 1
