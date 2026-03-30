@@ -30,7 +30,7 @@ COPY . .
 ARG FRONTEND_VERSION=latest
 RUN set -e; \
     if [ "$FRONTEND_VERSION" = "latest" ]; then \
-      DOWNLOAD_URL=$(curl -fsSL -o /dev/null -w '%{redirect_url}' \
+      DOWNLOAD_URL=$(curl -fsS -o /dev/null -w '%{redirect_url}' \
         https://github.com/collei-monitor/collei-web/releases/latest); \
       FRONTEND_VERSION=$(basename "$DOWNLOAD_URL"); \
     fi; \

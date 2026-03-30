@@ -145,7 +145,7 @@ step "5/8 下载前端"
 
 if [ "$FRONTEND_VERSION" = "latest" ]; then
   info "获取最新前端版本号..."
-  REDIRECT_URL=$(curl -fsSL -o /dev/null -w '%{redirect_url}' \
+  REDIRECT_URL=$(curl -fsS -o /dev/null -w '%{redirect_url}' \
     "${FRONTEND_REPO}/releases/latest" 2>/dev/null || true)
   if [ -n "$REDIRECT_URL" ]; then
     FRONTEND_VERSION=$(basename "$REDIRECT_URL")
