@@ -17,6 +17,7 @@ from app.api.v1.ws_sftp import router as ws_sftp_router
 from app.api.v1.ws_terminal import router as ws_terminal_router
 from app.api.v1.ws_files import router as ws_files_router
 from app.api.v1.ws_ssh import router as ws_ssh_router
+from app.api.v1.system import router as system_router
 
 api_v1_router = APIRouter(prefix="/api/v1")
 
@@ -35,4 +36,5 @@ api_v1_router.include_router(ws_files_router)
 api_v1_router.include_router(notification_router)
 api_v1_router.include_router(dns_router)
 api_v1_router.include_router(logs_router)
+api_v1_router.include_router(system_router)
 

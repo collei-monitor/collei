@@ -47,11 +47,50 @@ EOF
   fi
 fi
 
-# ── 3. 数据库迁移 ─────────────────────────────────────────────────────────
+# ── 3. 恢复检测 ──────────────────────────────────────────────────────────────
+#   如果存在 .restore-pending 标记文件，执行备份恢复流程。
+#   流程：备份当前数据 → 覆盖恢复文件 → 删除暂存 → 正常迁移。
+RESTORE_DIR="$DATA_DIR/.restore"
+RESTORE_PENDING="$DATA_DIR/.restore-pending"
+PRE_RESTORE_BACKUP="$DATA_DIR/.pre-restore-backup"
+
+if [ -f "$RESTORE_PENDING" ] && [ -d "$RESTORE_DIR" ]; then
+  echo ">>> [RESTORE] 检测到待恢复备份，开始恢复..."
+
+  # 备份当前数据（以防恢复后需要回退）
+  rm -rf "$PRE_RESTORE_BACKUP"
+  mkdir -p "$PRE_RESTORE_BACKUP"
+  for f in collei.db .secrets ssh_ca_key.enc ssh_ca_key.pub ssh_ca_key_old.pub; do
+    [ -f "$DATA_DIR/$f" ] && cp "$DATA_DIR/$f" "$PRE_RESTORE_BACKUP/$f"
+  done
+  echo ">>> [RESTORE] 当前数据已备份到 $PRE_RESTORE_BACKUP"
+
+  # 恢复文件覆盖（跳过 backup_meta.json）
+  for f in "$RESTORE_DIR"/*; do
+    name=$(basename "$f")
+    [ "$name" = "backup_meta.json" ] && continue
+    cp "$f" "$DATA_DIR/$name"
+    echo ">>> [RESTORE] 已恢复: $name"
+  done
+
+  # 如果恢复的 .secrets 文件存在，重新加载密钥
+  if [ -f "$RESTORE_DIR/.secrets" ]; then
+    echo ">>> [RESTORE] 重新加载恢复的密钥..."
+    . "$DATA_DIR/.secrets"
+    export COLLEI_SECRET_KEY COLLEI_CA_MASTER_KEY
+  fi
+
+  # 清理暂存
+  rm -rf "$RESTORE_DIR"
+  rm -f "$RESTORE_PENDING"
+  echo ">>> [RESTORE] 恢复完成，继续启动..."
+fi
+
+# ── 4. 数据库迁移 ─────────────────────────────────────────────────────────
 echo ">>> Running database migrations..."
 alembic upgrade head
 
-# ── 4. 修正数据卷权限并降权启动 ───────────────────────────────────────────
+# ── 5. 修正数据卷权限并降权启动 ───────────────────────────────────────────
 #   chown 放在最后，确保之前所有写操作（cp/secrets/migrate）均以 root 完成。
 #   .secrets 保留 root 所有：容器 cap_drop ALL 后 root 缺少 DAC_OVERRIDE，
 #   重启时需要以 root 身份读取该文件。
