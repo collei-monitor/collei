@@ -1,48 +1,49 @@
 # syntax=docker/dockerfile:1
 
-# ─── Stage 1: 克隆并构建前端 ─────────────────────────────────────────────────
-FROM node:22-alpine AS frontend-builder
-
-# 通过 build arg 传入前端仓库地址，也可在 docker-compose.yml 中覆盖
-ARG FRONTEND_REPO=https://github.com/YOUR_USERNAME/collei-web.git
-ARG FRONTEND_REF=main
-
-RUN apk add --no-cache git
-
-RUN git clone --depth 1 --branch ${FRONTEND_REF} ${FRONTEND_REPO} /build
-
-WORKDIR /build
-RUN npm install
-# 使用 .env.production（VITE_API_BASE_URL=/api/v1）
-RUN npm run build
-
-# ─── Stage 2: Python 运行时 ───────────────────────────────────────────────────
-FROM python:3.12-slim AS runtime
+FROM python:3.12-slim
 
 WORKDIR /app
 
-# 确保 /app 目录下的 app 包优先于 site-packages 中的同名桩包被导入
-ENV PYTHONPATH=/app
+# ── 环境变量 ──────────────────────────────────────────────────────────────
+ENV PYTHONPATH=/app \
+    PYTHONDONTWRITEBYTECODE=1 \
+    SQLITE_TMPDIR=/tmp
 
-# 先单独安装依赖，充分利用 Docker 层缓存
+# ── 系统依赖 + 非 root 用户 ──────────────────────────────────────────────
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends gosu curl && \
+    rm -rf /var/lib/apt/lists/* && \
+    groupadd -g 1000 collei && \
+    useradd -u 1000 -g collei -s /sbin/nologin -M collei
+
+# ── 安装 Python 依赖（利用 Docker 层缓存）────────────────────────────────
 COPY pyproject.toml .
 RUN mkdir -p app && touch app/__init__.py && \
     pip install --no-cache-dir . && \
     pip uninstall -y collei && \
     rm -rf app
 
-# 复制后端全部源码（真实 app 包覆盖桩包位置）
+# ── 复制后端源码 ──────────────────────────────────────────────────────────
 COPY . .
 
-# 复制前端构建产物到 main.py 期望的位置（frontend/dist）
-COPY --from=frontend-builder /build/dist ./frontend/dist
+# ── 下载预构建前端 ────────────────────────────────────────────────────────
+ARG FRONTEND_VERSION=latest
+RUN set -e; \
+    if [ "$FRONTEND_VERSION" = "latest" ]; then \
+      DOWNLOAD_URL=$(curl -fsSL -o /dev/null -w '%{redirect_url}' \
+        https://github.com/collei-monitor/collei-web/releases/latest); \
+      FRONTEND_VERSION=$(basename "$DOWNLOAD_URL"); \
+    fi; \
+    echo ">>> Downloading frontend ${FRONTEND_VERSION}..."; \
+    mkdir -p frontend/dist && \
+    curl -fsSL "https://github.com/collei-monitor/collei-web/releases/download/${FRONTEND_VERSION}/collei-web-${FRONTEND_VERSION}.tar.gz" \
+      | tar xz -C frontend/dist
 
-# 创建 /data 目录用于挂载本地目录
-# 使用 -v /local/path:/data 挂载本地目录到容器
-RUN mkdir -p /data
+# ── 预编译字节码 + 创建数据目录 ────────────────────────────────
+RUN python -m compileall -q . && \
+    mkdir -p /data && \
+    chmod +x /app/entrypoint.sh
 
-EXPOSE 8000
-
-RUN chmod +x /app/entrypoint.sh
+EXPOSE 22333
 
 ENTRYPOINT ["/app/entrypoint.sh"]
