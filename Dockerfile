@@ -26,6 +26,9 @@ RUN mkdir -p app && touch app/__init__.py && \
 # ── 复制后端源码 ──────────────────────────────────────────────────────────
 COPY . .
 
+# ── 安装本包（注册 CLI 入口点 collei，跳过已缓存的依赖）─────────────────
+RUN pip install --no-cache-dir --no-deps .
+
 # ── 下载预构建前端 ────────────────────────────────────────────────────────
 ARG FRONTEND_VERSION=latest
 RUN set -e; \
