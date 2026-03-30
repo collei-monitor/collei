@@ -69,6 +69,17 @@ _MONITORING_TABLES = ("load_now", "load_minute", "load_hour", "traffic_hourly_st
 
 # ── 加密辅助 ──────────────────────────────────────────────────────────────────
 
+
+def _reconstruct_secrets(dest_path: str) -> None:
+    """从环境变量重建 .secrets 文件（Docker 中 .secrets 归 root 所有时使用）."""
+    sk = settings.SECRET_KEY
+    ck = settings.CA_MASTER_KEY
+    with open(dest_path, "w", encoding="utf-8") as f:
+        f.write(f"COLLEI_SECRET_KEY='{sk}'\n")
+        f.write(f"COLLEI_CA_MASTER_KEY='{ck}'\n")
+    os.chmod(dest_path, 0o600)
+
+
 def _derive_key(password: str, salt: bytes) -> bytes:
     """PBKDF2-HMAC-SHA256 从密码 + 盐值派生 32 字节 AES 密钥."""
     kdf = PBKDF2HMAC(
@@ -198,7 +209,15 @@ async def download_backup(
         for fname in (".secrets", "ssh_ca_key.enc", "ssh_ca_key.pub", "ssh_ca_key_old.pub"):
             src = _DATA_DIR / fname
             if src.exists():
-                shutil.copy2(str(src), os.path.join(tmpdir, fname))
+                try:
+                    shutil.copy2(str(src), os.path.join(tmpdir, fname))
+                except PermissionError:
+                    # Docker: .secrets owned by root, reconstruct from env vars
+                    if fname == ".secrets":
+                        _reconstruct_secrets(os.path.join(tmpdir, fname))
+                    else:
+                        logger.warning("无法读取 %s (权限不足), 跳过", fname)
+                        continue
                 included.append(fname)
 
         # 3. 写入元数据
