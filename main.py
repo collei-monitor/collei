@@ -33,6 +33,86 @@ THEMES_DIR = DATA_DIR / "themes"
 
 logger = logging.getLogger(__name__)
 
+
+def _apply_pending_restore() -> None:
+    """检查并应用待恢复的备份数据（在数据库首次访问前执行）.
+
+    裸机部署通过此函数恢复, Docker 部署通过 entrypoint.sh 恢复（两者互为保底）。
+    """
+    restore_dir = DATA_DIR / ".restore"
+    pending_file = DATA_DIR / ".restore-pending"
+    pre_backup_dir = DATA_DIR / ".pre-restore-backup"
+
+    if not pending_file.exists() or not restore_dir.is_dir():
+        return
+
+    logger.warning("[RESTORE] 检测到待恢复备份，开始恢复...")
+
+    import shutil
+
+    # 1. 备份当前数据
+    if pre_backup_dir.exists():
+        shutil.rmtree(pre_backup_dir, ignore_errors=True)
+    pre_backup_dir.mkdir(parents=True, exist_ok=True)
+
+    for fname in ("collei.db", ".secrets", "ssh_ca_key.enc", "ssh_ca_key.pub", "ssh_ca_key_old.pub"):
+        src = DATA_DIR / fname
+        if src.exists():
+            shutil.copy2(str(src), str(pre_backup_dir / fname))
+
+    logger.warning("[RESTORE] 当前数据已备份到 %s", pre_backup_dir)
+
+    # 2. 恢复文件覆盖
+    for item in restore_dir.iterdir():
+        if item.name == "backup_meta.json":
+            continue
+        if item.is_file():
+            dest = DATA_DIR / item.name
+            shutil.copy2(str(item), str(dest))
+            logger.warning("[RESTORE] 已恢复: %s", item.name)
+
+    # 3. 如果 .secrets 被恢复, 更新 .env（裸机部署的 systemd 读取 .env）
+    restored_secrets = restore_dir / ".secrets"
+    env_file = Path(__file__).parent / ".env"
+    if restored_secrets.exists() and env_file.exists():
+        _update_env_secrets(env_file, DATA_DIR / ".secrets")
+
+    # 4. 清理暂存
+    shutil.rmtree(restore_dir, ignore_errors=True)
+    pending_file.unlink(missing_ok=True)
+    logger.warning("[RESTORE] 恢复完成")
+
+
+def _update_env_secrets(env_file: Path, secrets_file: Path) -> None:
+    """从 .secrets 文件读取密钥并更新 .env 中对应的值."""
+    if not secrets_file.exists():
+        return
+
+    # 解析 .secrets 文件
+    new_keys: dict[str, str] = {}
+    for line in secrets_file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if "=" in line and not line.startswith("#"):
+            key, _, val = line.partition("=")
+            new_keys[key.strip()] = val.strip().strip("'\"")
+
+    if not new_keys:
+        return
+
+    # 更新 .env 文件
+    env_lines = env_file.read_text(encoding="utf-8").splitlines()
+    updated = False
+    for i, line in enumerate(env_lines):
+        for key, val in new_keys.items():
+            if line.strip().startswith(key + "=") or line.strip().startswith(f"# {key}="):
+                env_lines[i] = f"{key}={val}"
+                updated = True
+
+    if updated:
+        env_file.write_text("\n".join(env_lines) + "\n", encoding="utf-8")
+        logger.warning("[RESTORE] 已更新 .env 中的密钥")
+
+
 # 缓存每个主题的 StaticFiles 实例，避免重复创建
 _theme_static_cache: dict[str, StaticFiles] = {}
 
@@ -53,6 +133,9 @@ def _get_theme_static(theme_name: str) -> StaticFiles | None:
 async def lifespan(application: FastAPI):
     """应用生命周期 — 启动时确保默认管理员存在, 启动后台任务."""
     from app.core.tasks import background_tasks
+
+    # 在首次数据库访问前检查并执行备份恢复
+    _apply_pending_restore()
 
     await _ensure_default_admin()
     await _ensure_default_configs(application)
