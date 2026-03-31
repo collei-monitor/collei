@@ -42,6 +42,9 @@ venv.bak/
 .env.local
 .env.*.local
 
+# Docker Compose 用户自定义覆盖
+docker-compose.override.yml
+
 # 数据库
 *.db
 *.db-shm

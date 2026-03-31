@@ -1,20 +1,23 @@
+# 开发者本地构建
+# 用法: docker compose -f docker-compose.build.yml up -d --build
+
 services:
   collei:
-    image: ghcr.io/collei-monitor/collei:${COLLEI_VERSION:-latest}
+    image: collei:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        FRONTEND_VERSION: ${FRONTEND_VERSION:-latest}
     ports:
       - "${COLLEI_PORT:-22333}:22333"
     volumes:
       - collei-data:/data
     environment:
-      # SQLite 数据库存放在持久化卷中
       - COLLEI_DATABASE_URL=sqlite+aiosqlite:////data/collei.db
-      # 数据目录（主题 / Favicon / GeoIP / CA 密钥）
       - COLLEI_DATA_DIR=/data
-      # SECRET_KEY 与 CA_MASTER_KEY 首次启动自动生成并持久化到 /data/.secrets
-      # 如需手动指定，取消注释下方配置：
       # - COLLEI_SECRET_KEY=
       # - COLLEI_CA_MASTER_KEY=
-      # 可选配置
       # - COLLEI_DEFAULT_ADMIN_USERNAME=admin
       # - COLLEI_DEFAULT_ADMIN_PASSWORD=
       # - COLLEI_DEBUG=false

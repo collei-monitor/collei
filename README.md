@@ -30,9 +30,9 @@
 ### 方式一：Docker（推荐）
 
 ```bash
-# 克隆代码
-git clone https://github.com/collei-monitor/collei.git
-cd collei
+# 创建目录并下载 compose 文件
+mkdir collei && cd collei
+curl -fsSL https://raw.githubusercontent.com/collei-monitor/collei/main/docker-compose.yml -o docker-compose.yml
 
 # 一键启动
 docker compose up -d
@@ -44,12 +44,32 @@ docker compose up -d
 docker compose logs collei | grep "密码"
 ```
 
-> **密钥管理**：`SECRET_KEY` 与 `CA_MASTER_KEY` 首次启动时自动生成并持久化到 `/data/.secrets`。重启不会丢失。如需手动指定，在 `docker-compose.yml` 的 `environment` 中取消对应注释。
+> **密钥管理**：`SECRET_KEY` 与 `CA_MASTER_KEY` 首次启动时自动生成并持久化到 `/data/.secrets`。重启不会丢失。如需手动指定，编辑 `.env` 文件设置对应变量。
 
-#### 指定前端版本
+#### 自定义配置
+
+所有自定义通过 `.env` 文件完成，无需修改 `docker-compose.yml`：
 
 ```bash
-docker compose build --build-arg FRONTEND_VERSION=v0.0.1
+# 创建 .env 文件（与 docker-compose.yml 同目录）
+cat > .env <<EOF
+# 指定镜像版本（默认 latest）
+# COLLEI_VERSION=0.1.0
+
+# 修改端口映射（默认 22333）
+# COLLEI_PORT=8080
+
+# 应用配置
+# COLLEI_DEBUG=false
+# COLLEI_DEFAULT_ADMIN_PASSWORD=your-password
+EOF
+```
+
+#### 指定版本
+
+```bash
+# 通过 .env 固定版本
+echo "COLLEI_VERSION=0.1.0" >> .env
 docker compose up -d
 ```
 
@@ -177,11 +197,17 @@ COLLEI_COOKIE_SECURE=true
 ```bash
 cd collei
 
-# 拉取最新代码
-git pull
+# 拉取最新镜像并重启（数据保留在 volume 中）
+docker compose pull
+docker compose up -d
+```
 
-# 重新构建并启动（数据保留在 volume 中）
-docker compose up -d --build
+升级到指定版本：
+
+```bash
+# 编辑 .env，设置目标版本
+echo "COLLEI_VERSION=0.2.0" > .env
+docker compose up -d
 ```
 
 ### 裸机升级
@@ -221,6 +247,21 @@ sudo bash upgrade.sh \
 | `no-new-privileges` | 阻止 suid/sgid 提权 |
 | 密钥自动持久化 | `SECRET_KEY` / `CA_MASTER_KEY` 保存在 `/data/.secrets`（chmod 600） |
 
+### 开发者本地构建
+
+如果你需要修改源码并本地构建镜像，使用 `docker-compose.build.yml`：
+
+```bash
+git clone https://github.com/collei-monitor/collei.git
+cd collei
+
+# 本地构建并启动
+docker compose -f docker-compose.build.yml up -d --build
+
+# 指定前端版本
+FRONTEND_VERSION=v0.1.0 docker compose -f docker-compose.build.yml up -d --build
+```
+
 ## 项目结构
 
 ```
@@ -239,7 +280,8 @@ collei/
 ├── deploy.sh            # 裸机一键部署脚本
 ├── upgrade.sh           # 裸机升级脚本
 ├── Dockerfile           # Docker 镜像定义
-├── docker-compose.yml   # Docker Compose 编排
+├── docker-compose.yml   # Docker Compose 编排（用户部署用）
+├── docker-compose.build.yml # Docker 本地构建（开发者用）
 └── entrypoint.sh        # 容器入口脚本
 ```
 
