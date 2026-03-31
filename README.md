@@ -32,7 +32,7 @@
 ```bash
 # 创建目录并下载 compose 文件
 mkdir collei && cd collei
-curl -fsSL https://raw.githubusercontent.com/collei-monitor/collei/main/docker-compose.yml -o docker-compose.yml
+curl -fsSL https://raw.githubusercontent.com/collei-monitor/collei/master/docker-compose.yml -o docker-compose.yml
 
 # 一键启动
 docker compose up -d
@@ -78,7 +78,7 @@ docker compose up -d
 > 适用于使用 systemd 的发行版（Ubuntu、Debian 等），脚本自动安装 [UV](https://docs.astral.sh/uv/) 作为 Python 包管理器。
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/collei-monitor/collei/main/deploy.sh -o deploy.sh
+curl -fsSL https://raw.githubusercontent.com/collei-monitor/collei/master/deploy.sh -o deploy.sh
 sudo bash deploy.sh
 ```
 
@@ -213,7 +213,7 @@ docker compose up -d
 ### 裸机升级
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/collei-monitor/collei/main/upgrade.sh -o upgrade.sh
+curl -fsSL https://raw.githubusercontent.com/collei-monitor/collei/master/upgrade.sh -o upgrade.sh
 sudo bash upgrade.sh
 ```
 
