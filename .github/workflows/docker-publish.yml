@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - "v*"
+    branches:
+      - master
   workflow_dispatch:
     inputs:
       frontend_version:
@@ -38,6 +40,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Lowercase image name
+        run: |
+          echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+
       - name: Extract metadata (tags, labels)
         id: meta
         uses: docker/metadata-action@v5
@@ -52,9 +58,8 @@ jobs:
       - name: Determine frontend version
         id: frontend
         run: |
-          # workflow_dispatch input > git tag > fallback to "latest"
-          if [ -n "${{ github.event.inputs.frontend_version }}" ]; then
-            echo "version=${{ github.event.inputs.frontend_version }}" >> "$GITHUB_OUTPUT"
+          if [ -n "${{ inputs.frontend_version }}" ]; then
+            echo "version=${{ inputs.frontend_version }}" >> "$GITHUB_OUTPUT"
           elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             echo "version=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
           else
