@@ -18,6 +18,15 @@ from fastapi.responses import FileResponse
 from app.core.config import settings
 from app.core.config_cache import config_cache
 
+
+def _get_frontend_version() -> str:
+    """读取打包时写入的前端版本号；读取失败时返回 'unknown'."""
+    version_file = Path(__file__).resolve().parents[3] / "frontend" / "dist" / ".version"
+    try:
+        return version_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        return "unknown"
+
 router = APIRouter(prefix="/public", tags=["public"])
 
 _DATA_DIR = Path(settings.DATA_DIR)
@@ -68,7 +77,7 @@ async def get_active_theme():
             "id": "default",
             "name": "内置主题",
             "description": "Collei 默认展示页",
-            "version": "builtin",
+            "version": _get_frontend_version(),
             "author": "Collei",
             "is_builtin": True,
         }
@@ -87,7 +96,7 @@ async def get_active_theme():
             "id": "default",
             "name": "内置主题",
             "description": "Collei 默认展示页",
-            "version": "builtin",
+            "version": _get_frontend_version(),
             "author": "Collei",
             "is_builtin": True,
         }

@@ -111,6 +111,7 @@ info "下载前端 ${FRONTEND_VERSION}..."
 rm -rf "$INSTALL_DIR/frontend/dist"
 mkdir -p "$INSTALL_DIR/frontend/dist"
 curl -fsSL "$TARBALL_URL" | tar xz -C "$INSTALL_DIR/frontend/dist"
+echo "$FRONTEND_VERSION" > "$INSTALL_DIR/frontend/dist/.version"
 info "前端已更新到 ${FRONTEND_VERSION}"
 
 # ══════════════════════════════════════════════════════════════════════════════

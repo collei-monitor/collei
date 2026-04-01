@@ -158,6 +158,7 @@ TARBALL_URL="${FRONTEND_REPO}/releases/download/${FRONTEND_VERSION}/collei-web-$
 info "下载前端 ${FRONTEND_VERSION}..."
 mkdir -p "$INSTALL_DIR/frontend/dist"
 curl -fsSL "$TARBALL_URL" | tar xz -C "$INSTALL_DIR/frontend/dist"
+echo "$FRONTEND_VERSION" > "$INSTALL_DIR/frontend/dist/.version"
 info "前端已解压到 $INSTALL_DIR/frontend/dist"
 
 # ══════════════════════════════════════════════════════════════════════════════
