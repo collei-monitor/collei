@@ -35,10 +35,12 @@ RUN set -e; \
       FRONTEND_VERSION=$(basename "$DOWNLOAD_URL"); \
     fi; \
     echo ">>> Downloading frontend ${FRONTEND_VERSION}..."; \
-    mkdir -p frontend/dist && \
-    curl -fsSL "https://github.com/collei-monitor/collei-web/releases/download/${FRONTEND_VERSION}/collei-web-${FRONTEND_VERSION}.tar.gz" \
-      | tar xz -C frontend/dist && \
-    echo "${FRONTEND_VERSION}" > frontend/dist/.version
+    mkdir -p frontend/dist; \
+    curl -fsSL -o /tmp/frontend.tar.gz \
+      "https://github.com/collei-monitor/collei-web/releases/download/${FRONTEND_VERSION}/collei-web-${FRONTEND_VERSION}.tar.gz"; \
+    tar xzf /tmp/frontend.tar.gz -C frontend/dist; \
+    echo "${FRONTEND_VERSION}" > frontend/dist/.version; \
+    rm /tmp/frontend.tar.gz
 
 # ── 清理构建产物 ──────────────────────────────────────────────────────────
 RUN pip uninstall -y pip setuptools 2>/dev/null; true && \
