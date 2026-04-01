@@ -135,7 +135,8 @@ async def create_rule(db: AsyncSession, **kwargs) -> AlertRule:
     rule = AlertRule(**kwargs)
     db.add(rule)
     await db.flush()
-    return rule
+    # 重新查询以预加载 targets / channels，避免序列化时懒加载报错
+    return await get_rule(db, rule.id)  # type: ignore[return-value]
 
 
 async def update_rule(
