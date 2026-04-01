@@ -243,7 +243,7 @@ sudo bash upgrade.sh \
 | 非 root 运行 | 应用以 `collei` 用户 (uid=1000) 运行 |
 | `read_only: true` | 容器文件系统只读，仅 `/data` 卷和 `/tmp` 可写 |
 | `cap_drop: ALL` | 丢弃所有 Linux capabilities |
-| `cap_add: CHOWN, SETUID, SETGID` | 仅保留 chown + gosu 降权所需最小权限 |
+| `cap_add: CHOWN, SETUID, SETGID` | 仅保留 chown + su-exec 降权所需最小权限 |
 | `no-new-privileges` | 阻止 suid/sgid 提权 |
 | 密钥自动持久化 | `SECRET_KEY` / `CA_MASTER_KEY` 保存在 `/data/.secrets`（chmod 600） |
 

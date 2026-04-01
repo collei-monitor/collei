@@ -26,3 +26,4 @@ test/
 build/
 dist/
 *.egg-info/
+.nuitka-venv/

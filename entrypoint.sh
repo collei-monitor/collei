@@ -97,4 +97,4 @@ alembic upgrade head
 echo ">>> Fixing /data ownership & starting Collei (port 22333)..."
 chown -R collei:collei "$DATA_DIR"
 [ -f "$SECRETS_FILE" ] && chown root:root "$SECRETS_FILE"
-exec gosu collei uvicorn main:app --host 0.0.0.0 --port 22333 --workers 1
+exec su-exec collei uvicorn main:app --host 0.0.0.0 --port 22333 --workers 1
