@@ -57,7 +57,7 @@ _SERVER_FIELDS = (
     "uuid", "name", "top", "cpu_name", "cpu_cores", "arch", "os",
     "region", "mem_total", "swap_total", "disk_total", "virtualization",
     "hidden", "is_approved", "created_at", "token", "enable_statistics_mode",
-    "tags",
+    "tags", "public_remark",
 )
 
 # LoadNow 中需要缓存的字段
@@ -501,6 +501,7 @@ class ServerCache:
                 "region": srv.get("region"),
                 "top": srv.get("top"),
                 "tags": _parse_tags(srv.get("tags", "[]")),
+                "public_remark": srv.get("public_remark"),
                 "status": st.get("status", 0),
                 "last_online": st.get("last_online"),
                 "boot_time": st.get("boot_time"),

@@ -62,6 +62,7 @@ async def create_server(
     *,
     name: str,
     remark: str | None = None,
+    public_remark: str | None = None,
     is_approved: int = 0,
     hardware_info: dict | None = None,
 ) -> Server:
@@ -69,7 +70,8 @@ async def create_server(
 
     Args:
         name: 服务器名称
-        remark: 管理员备注
+        remark: 管理员私有备注
+        public_remark: 公开备注
         is_approved: 是否已批准（被动注册默认为 1）
         hardware_info: Agent 上报的硬件信息字典
     """
@@ -78,6 +80,7 @@ async def create_server(
         name=name,
         token=token,
         remark=remark,
+        public_remark=public_remark,
         is_approved=is_approved,
     )
     if hardware_info:

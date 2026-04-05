@@ -23,12 +23,14 @@ class ServerCreate(BaseModel):
     """管理员被动注册：手动创建服务器记录（仅需名称）."""
     name: str = Field(..., min_length=1, max_length=128)
     remark: str | None = None
+    public_remark: str | None = None
 
 
 class ServerUpdate(BaseModel):
     """管理员更新服务器信息."""
     name: str | None = Field(None, min_length=1, max_length=128)
     remark: str | None = None
+    public_remark: str | None = None
     tags: list | None = None
     is_region_locked: int | None = Field(None, ge=0, le=1)
     top: int | None = None
@@ -56,6 +58,7 @@ class ServerRead(BaseModel):
     disk_total: int | None = None
     version: str | None = None
     remark: str | None = None
+    public_remark: str | None = None
     tags: list = Field(default_factory=list)
     is_region_locked: int = 0
     top: int = 0
@@ -89,6 +92,7 @@ class ServerBrief(BaseModel):
     ipv6: str | None = None
     version: str | None = None
     tags: list = Field(default_factory=list)
+    public_remark: str | None = None
     top: int = 0
     hidden: int = 0
     is_approved: int = 0
@@ -136,6 +140,7 @@ class ServerFullDetail(BaseModel):
     disk_total: int | None = None
     version: str | None = None
     remark: str | None = None
+    public_remark: str | None = None
     tags: list = Field(default_factory=list)
     is_region_locked: int = 0
     top: int = 0
@@ -191,13 +196,14 @@ class ServerCreateResponse(BaseModel):
 
 
 class ServerPublicBrief(BaseModel):
-    """公开接口返回的服务器信息 — 不含敏感字段（IP、版本、备注等）."""
+    """公开接口返回的服务器信息 — 不含敏感字段（IP、版本、私有备注等）."""
     uuid: str
     name: str
     cpu_name: str | None = None
     arch: str | None = None
     os: str | None = None
     region: str | None = None
+    public_remark: str | None = None
     top: int = 0
 
     # 内联状态

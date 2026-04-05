@@ -57,6 +57,7 @@ async def create_server(
         db,
         name=body.name,
         remark=body.remark,
+        public_remark=body.public_remark,
         is_approved=1,
     )
     server_cache.update_server(server.uuid, {
@@ -64,6 +65,7 @@ async def create_server(
             "uuid", "name", "top", "cpu_name", "cpu_cores", "arch", "os",
             "region", "mem_total", "swap_total", "disk_total", "virtualization",
             "hidden", "is_approved", "created_at", "token", "enable_statistics_mode",
+            "public_remark",
         )
     })
     await audit.emit(
