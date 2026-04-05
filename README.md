@@ -115,7 +115,7 @@ sudo bash deploy.sh \
 | `COLLEI_DEBUG` | `false` | 调试模式（启用 `/docs` API 文档） |
 | `COLLEI_DEFAULT_ADMIN_USERNAME` | `admin` | 初始管理员用户名 |
 | `COLLEI_DEFAULT_ADMIN_PASSWORD` | *自动生成* | 初始管理员密码，留空则随机生成（见日志） |
-| `COLLEI_TRUSTED_PROXIES` | `127.0.0.1` | 可信反向代理 IP，逗号分隔；`*` 信任所有 |
+| `COLLEI_TRUSTED_PROXIES` | `*` | 可信反向代理 IP，逗号分隔；`*` 信任所有 |
 | `COLLEI_COOKIE_SECURE` | `true` | Cookie 仅通过 HTTPS 发送（本地开发设为 `false`） |
 | `COLLEI_COOKIE_SAMESITE` | `lax` | Cookie SameSite 策略 |
 | `COLLEI_ACCESS_TOKEN_EXPIRE_MINUTES` | `1440` | Token 有效期（分钟） |
@@ -186,7 +186,7 @@ monitor.example.com {
 配置反向代理后，设置环境变量：
 
 ```bash
-COLLEI_TRUSTED_PROXIES=127.0.0.1
+# 默认已信任所有代理（COLLEI_TRUSTED_PROXIES=*），通常无需修改
 COLLEI_COOKIE_SECURE=true
 ```
 

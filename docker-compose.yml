@@ -19,6 +19,8 @@ services:
       # - COLLEI_DEFAULT_ADMIN_PASSWORD=
       # - COLLEI_DEBUG=false
       # - COLLEI_APP_NAME=Collei
+      # 反向代理信任（默认 *，信任所有；可指定具体 IP）
+      # - COLLEI_TRUSTED_PROXIES=*
     # ── 安全加固 ──────────────────────────────────────────
     read_only: true
     tmpfs:
