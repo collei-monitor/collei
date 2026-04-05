@@ -128,6 +128,12 @@ class AgentReportRequest(BaseModel):
         description="探测结果列表: [{target_id, time, median_latency, max_latency, min_latency, packet_loss}]",
     )
 
+    # ── Agent 功能状态（可选，新版 Agent 携带） ──
+    features: dict | None = Field(
+        None,
+        description="Agent 功能状态：{ssh_enabled, terminal_enabled, file_api_enabled, tasks_enabled}",
+    )
+
 
 class AgentReportResponse(BaseModel):
     """Agent 上报成功响应."""

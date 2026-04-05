@@ -62,6 +62,14 @@ async def create_task(
                 detail=f"Server '{agent_id}' is not approved",
             )
 
+        # 检查 Agent 是否启用了远程任务执行
+        features = server_cache.get_features(agent_id)
+        if features is not None and not features.get("tasks_enabled", True):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Server '{agent_id}' does not have remote task execution enabled",
+            )
+
     # 创建任务
     task = await crud_task.create_task(
         db,

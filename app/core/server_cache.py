@@ -78,7 +78,7 @@ _BILLING_FIELDS = (
 
 
 class ServerCache:
-    """服务器数据内存缓存（asyncio 单事件循环下线程安全）."""
+    """服务器数据内存缓存."""
 
     def __init__(self) -> None:
         # uuid → 服务器静态信息
@@ -99,6 +99,8 @@ class ServerCache:
         self._billing_rules: dict[str, dict[str, Any]] = {}
         # uuid → 当前周期已用流量
         self._cycle_traffic: dict[str, int] = {}
+        # uuid → Agent 功能状态 {ssh_enabled, terminal_enabled, file_api_enabled, tasks_enabled}
+        self._features: dict[str, dict[str, bool]] = {}
         # 节点数据是否变更（服务器/分组增删改时置 True）
         self._nodes_dirty: bool = False
 
@@ -276,6 +278,14 @@ class ServerCache:
             f: load_dict.get(f) for f in _LOAD_FIELDS
         }
 
+    def update_features(self, uuid: str, features: dict[str, bool]) -> None:
+        """更新 Agent 上报的功能状态缓存."""
+        self._features[uuid] = features
+
+    def get_features(self, uuid: str) -> dict[str, bool] | None:
+        """获取 Agent 功能状态。返回 None 表示该 Agent 未上报过功能状态（旧版本）."""
+        return self._features.get(uuid)
+
     def remove_server(self, uuid: str) -> None:
         """从缓存中移除服务器及其关联数据."""
         srv = self._servers.pop(uuid, None)
@@ -283,6 +293,7 @@ class ServerCache:
             self._token_index.pop(srv["token"], None)
         self._statuses.pop(uuid, None)
         self._loads.pop(uuid, None)
+        self._features.pop(uuid, None)
         # 清理分组关联
         group_ids = self._server_groups.pop(uuid, [])
         for gid in group_ids:

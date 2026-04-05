@@ -63,6 +63,14 @@ async def create_ssh_session(
             detail="Agent not connected",
         )
 
+    # 检查 Agent 是否启用了 SSH 功能
+    features = server_cache.get_features(uuid)
+    if features is not None and not features.get("ssh_enabled", True):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="WebSSH is not enabled on this agent",
+        )
+
     client_ip = get_client_ip(request)
 
     try:

@@ -447,6 +447,10 @@ async def agent_report(
     if load_dict:
         server_cache.update_load(server.uuid, load_dict)
 
+    # ── 缓存 Agent 功能状态（新版 Agent 携带） ──
+    if body.features:
+        server_cache.update_features(server.uuid, body.features)
+
     # ── 网络监控：写入探测结果 + 增量下发 ──
     network_dispatch_resp: dict | None = None
 
@@ -492,18 +496,24 @@ async def agent_report(
 
     # ── 待执行任务：查询并下发给 Agent ──
     pending_tasks_resp: list[dict] | None = None
-    pending_execs = await crud_task.get_pending_executions_for_agent(db, server.uuid)
-    if pending_execs:
-        pending_tasks_resp = []
-        for ex in pending_execs:
-            await crud_task.mark_execution_dispatched(db, ex.id)
-            pending_tasks_resp.append({
-                "execution_id": ex.id,
-                "task_id": ex.task_id,
-                "type": ex.task.type,
-                "payload": ex.task.payload,
-                "timeout_sec": ex.task.timeout_sec,
-            })
+    # 仅在 Agent 启用了远程任务时下发（旧版 Agent 未上报 features 时默认允许）
+    agent_features = server_cache.get_features(server.uuid)
+    tasks_enabled = (
+        agent_features is None or agent_features.get("tasks_enabled", True)
+    )
+    if tasks_enabled:
+        pending_execs = await crud_task.get_pending_executions_for_agent(db, server.uuid)
+        if pending_execs:
+            pending_tasks_resp = []
+            for ex in pending_execs:
+                await crud_task.mark_execution_dispatched(db, ex.id)
+                pending_tasks_resp.append({
+                    "execution_id": ex.id,
+                    "task_id": ex.task_id,
+                    "type": ex.task.type,
+                    "payload": ex.task.payload,
+                    "timeout_sec": ex.task.timeout_sec,
+                })
 
     return AgentReportResponse(
         uuid=server.uuid,
