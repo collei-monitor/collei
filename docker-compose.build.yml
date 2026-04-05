@@ -9,6 +9,7 @@ services:
       dockerfile: Dockerfile
       args:
         FRONTEND_VERSION: ${FRONTEND_VERSION:-latest}
+        COMMIT_HASH: ${COMMIT_HASH:-}
     ports:
       - "${COLLEI_PORT:-22333}:22333"
     volumes:

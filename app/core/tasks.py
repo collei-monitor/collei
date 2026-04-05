@@ -50,6 +50,7 @@ class BackgroundTasks:
         self._tasks.append(asyncio.create_task(self._purge_old_load_minute()))
         self._tasks.append(asyncio.create_task(self._purge_old_load_hour()))
         self._tasks.append(asyncio.create_task(self._purge_old_logs()))
+        self._tasks.append(asyncio.create_task(self._check_updates()))
 
         # 启动告警状态机引擎
         from app.core.alert_engine import alert_engine
@@ -497,6 +498,26 @@ class BackgroundTasks:
                 )
 
             await asyncio.sleep(interval)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Task 11: 版本更新检查
+    # ─────────────────────────────────────────────────────────────────────────
+
+    async def _check_updates(self) -> None:
+        """每小时检查一次 GitHub Releases，比较版本并缓存 changelog."""
+        from app.core.update_checker import update_checker
+
+        while True:
+            try:
+                await update_checker.check()
+            except Exception as e:
+                await audit.error(
+                    msg_type="error",
+                    message="版本检查任务出错",
+                    exc=e,
+                    source="check_updates",
+                )
+            await asyncio.sleep(3600)
 
     @staticmethod
     def _add_months(timestamp: int, months: int) -> int:

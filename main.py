@@ -133,12 +133,14 @@ def _get_theme_static(theme_name: str) -> StaticFiles | None:
 async def lifespan(application: FastAPI):
     """应用生命周期 — 启动时确保默认管理员存在, 启动后台任务."""
     from app.core.tasks import background_tasks
+    from app.core.update_checker import update_checker
 
     # 在首次数据库访问前检查并执行备份恢复
     _apply_pending_restore()
 
     await _ensure_default_admin()
     await _ensure_default_configs(application)
+    update_checker.startup()
     await background_tasks.start()
     yield
     # shutdown

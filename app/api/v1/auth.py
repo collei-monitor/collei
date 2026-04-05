@@ -57,6 +57,7 @@ from app.schemas.auth import (
     TwoFactorVerifyRequest,
     UserRead,
     UserUpdate,
+    VersionInfo,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -72,6 +73,7 @@ def _user_to_read(
     agent_url: str | None = None,
     providers: list[SSOProviderPublic] | None = None,
     allow_password_login: bool = True,
+    version: VersionInfo | None = None,
 ) -> UserRead:
     return UserRead(
         uuid=user.uuid,
@@ -85,6 +87,7 @@ def _user_to_read(
         agent_url=agent_url,
         providers=providers or [],
         allow_password_login=allow_password_login,
+        version=version,
     )
 
 
@@ -420,11 +423,16 @@ async def get_me(
             },
         )
 
+    from app.core.update_checker import update_checker
     from app.crud import config as crud_config
 
     token = create_ws_token(current_user.uuid)
     global_reg_token = await crud_config.get_config_value(db, "global_registration_token")
     agent_url = await crud_config.get_config_value(db, "agent_url")
+
+    ver_data = update_checker.get_info()
+    ver_info = VersionInfo(**ver_data) if ver_data else None
+
     return _user_to_read(
         current_user,
         ws_token=token,
@@ -432,6 +440,7 @@ async def get_me(
         agent_url=agent_url,
         providers=providers,
         allow_password_login=allow_pw,
+        version=ver_info,
     )
 
 

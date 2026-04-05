@@ -47,6 +47,18 @@ class SSOProviderPublic(BaseModel):
 
     model_config = {"from_attributes": True}
 
+
+class VersionInfo(BaseModel):
+    """版本与更新信息."""
+    current_version: str | None = None
+    current_commit: str | None = None
+    latest_version: str | None = None
+    latest_commit: str | None = None
+    has_update: bool = False
+    changelog: str | None = None
+    checked_at: int | None = Field(None, description="上次检查时间戳")
+
+
 class UserRead(BaseModel):
     """返回给前端的用户信息（脱敏）."""
     uuid: str
@@ -60,6 +72,7 @@ class UserRead(BaseModel):
     agent_url: str | None = None
     providers: list[SSOProviderPublic] = Field(default_factory=list, description="已启用的 SSO 登录方式")
     allow_password_login: bool = True
+    version: VersionInfo | None = None
 
     model_config = {"from_attributes": True}
 
