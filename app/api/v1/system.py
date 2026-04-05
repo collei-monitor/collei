@@ -25,7 +25,7 @@ from pathlib import Path
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives.hashes import SHA256
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -261,7 +261,7 @@ async def download_backup(
 @router.post("/restore", response_model=RestoreResponse)
 async def upload_restore(
     file: UploadFile,
-    password: str = Query(..., min_length=8, description="备份加密密码"),
+    password: str = Form(..., min_length=8, description="备份加密密码"),
     _current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_session),
 ):
