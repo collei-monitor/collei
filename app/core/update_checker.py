@@ -39,21 +39,23 @@ def _parse_version(tag: str) -> Version | None:
         return None
 
 
-def _read_commit_hash() -> str | None:
-    """优先读 .commit_hash 文件，fallback 到 git rev-parse."""
-    # 1) 尝试读文件（Docker / deploy.sh 构建时写入）
-    for candidate in (Path(".commit_hash"), Path("/app/.commit_hash")):
+def _read_file_value(*candidates: Path) -> str | None:
+    """依次尝试读取文件，返回第一个非空内容."""
+    for candidate in candidates:
         try:
             content = candidate.read_text().strip()
             if content:
                 return content
         except OSError:
             continue
+    return None
 
-    # 2) fallback: git（开发环境）
+
+def _git_command(*args: str) -> str | None:
+    """执行 git 命令并返回 stdout，失败返回 None."""
     try:
         result = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],
+            ["git", *args],
             capture_output=True,
             text=True,
             timeout=5,
@@ -62,8 +64,34 @@ def _read_commit_hash() -> str | None:
             return result.stdout.strip() or None
     except Exception:  # noqa: BLE001
         pass
-
     return None
+
+
+def _read_current_version() -> str:
+    """读取当前版本：.version 文件 → git describe --tags → pyproject.toml."""
+    # 1) 构建时写入的 .version 文件
+    val = _read_file_value(Path(".version"), Path("/app/.version"))
+    if val:
+        return val.lstrip("v")
+
+    # 2) git tag（开发环境）
+    tag = _git_command("describe", "--tags", "--abbrev=0")
+    if tag:
+        return tag.lstrip("v")
+
+    # 3) fallback: 包元数据（pyproject.toml）
+    try:
+        return pkg_version("collei")
+    except Exception:  # noqa: BLE001
+        return "unknown"
+
+
+def _read_commit_hash() -> str | None:
+    """优先读 .commit_hash 文件，fallback 到 git rev-parse."""
+    val = _read_file_value(Path(".commit_hash"), Path("/app/.commit_hash"))
+    if val:
+        return val
+    return _git_command("rev-parse", "--short", "HEAD")
 
 
 class UpdateChecker:
@@ -80,11 +108,7 @@ class UpdateChecker:
 
     def startup(self) -> None:
         """应用启动时调用：读取当前版本 & commit hash."""
-        try:
-            self.current_version = pkg_version("collei")
-        except Exception:  # noqa: BLE001
-            self.current_version = "unknown"
-
+        self.current_version = _read_current_version()
         self.current_commit = _read_commit_hash()
         logger.info(
             "UpdateChecker: current_version=%s, commit=%s",
@@ -127,7 +151,7 @@ class UpdateChecker:
             latest_ver, latest_rel = valid[0]
 
             self.latest_version = str(latest_ver)
-            self.latest_commit = (latest_rel.get("target_commitish") or "")[:12] or None
+            self.latest_commit = (latest_rel.get("target_commitish") or "")[:7] or None
             self.has_update = cur is not None and latest_ver > cur
             self.checked_at = int(time.time())
 

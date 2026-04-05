@@ -24,7 +24,9 @@ RUN mkdir -p app && touch app/__init__.py && \
 # ── 复制后端源码 + 安装本包（注册 CLI 入口点）────────────────────────────
 COPY . .
 ARG COMMIT_HASH=""
+ARG VERSION=""
 RUN echo "${COMMIT_HASH}" > .commit_hash && \
+    echo "${VERSION}" > .version && \
     pip install --no-cache-dir --no-deps . && \
     rm -rf /build/build
 
@@ -75,8 +77,9 @@ COPY --from=builder /opt/venv /opt/venv
 # ── 从 builder 复制前端资源 ───────────────────────────────────────────────
 COPY --from=builder /build/frontend/dist /app/frontend/dist
 
-# ── 从 builder 复制 commit hash ───────────────────────────────────────────
+# ── 从 builder 复制版本信息 ───────────────────────────────────────────────
 COPY --from=builder /build/.commit_hash /app/.commit_hash
+COPY --from=builder /build/.version /app/.version
 
 # ── 复制后端源码 ──────────────────────────────────────────────────────────
 COPY . .

@@ -1,6 +1,6 @@
 [project]
 name = "collei"
-version = "0.1.0"
+dynamic = ["version"]
 description = "一个多功能的自托管服务器监控工具"
 requires-python = ">=3.11"
 dependencies = [
@@ -26,6 +26,7 @@ dependencies = [
     "dns-lexicon>=3.23",
     "fastapi-sso>=0.16",
     "packaging>=21.0",
+    "setuptools-scm>=8.0",
 ]
 
 [project.optional-dependencies]
@@ -40,3 +41,6 @@ collei = "cli:main"
 
 [tool.setuptools.packages.find]
 include = ["app*"]
+
+[tool.setuptools_scm]
+fallback_version = "0.0.0"

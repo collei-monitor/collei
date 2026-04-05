@@ -19,7 +19,6 @@ import sqlite3
 import tarfile
 import tempfile
 import time
-from importlib.metadata import version as pkg_version
 from pathlib import Path
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -151,10 +150,8 @@ def _purge_monitoring_tables(db_path: str) -> None:
 # ── 备份元数据 ────────────────────────────────────────────────────────────────
 
 def _build_meta(files: list[str], exclude_monitoring: bool) -> dict:
-    try:
-        ver = pkg_version("collei")
-    except Exception:
-        ver = "unknown"
+    from app.core.update_checker import _read_current_version
+    ver = _read_current_version()
     return {
         "version": _BACKUP_VERSION,
         "created_at": int(time.time()),

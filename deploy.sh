@@ -125,8 +125,9 @@ else
   cd "$INSTALL_DIR"
 fi
 
-# 写入 commit hash（供版本检查器读取）
+# 写入版本信息（供版本检查器读取）
 git rev-parse --short HEAD > "$INSTALL_DIR/.commit_hash" 2>/dev/null || true
+git describe --tags --abbrev=0 > "$INSTALL_DIR/.version" 2>/dev/null || true
 
 # ══════════════════════════════════════════════════════════════════════════════
 step "4/8 创建 Python 虚拟环境并安装依赖"

@@ -232,10 +232,16 @@ def _inject_html_title(html: str) -> str:
     return re.sub(r"<title>[^<]*</title>", f"<title>{safe_name}</title>", html, count=1)
 
 
+def _get_version() -> str:
+    """从 .version 文件 / setuptools-scm 获取版本号."""
+    from app.core.update_checker import _read_current_version
+    return _read_current_version()
+
+
 def create_app() -> FastAPI:
     application = FastAPI(
         title="Collei",
-        version="0.1.0",
+        version=_get_version(),
         docs_url="/docs" if settings.DEBUG else None,
         redoc_url="/redoc" if settings.DEBUG else None,
         lifespan=lifespan,
