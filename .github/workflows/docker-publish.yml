@@ -118,13 +118,13 @@ jobs:
 
       - name: Package source
         run: |
-          tar --exclude='.git' -czf collei-server-${{ github.ref_name }}.tar.gz .
-          zip -r collei-server-${{ github.ref_name }}.zip . -x '.git/*'
+          tar --exclude='.git' -czf /tmp/collei-server-${{ github.ref_name }}.tar.gz .
+          zip -r /tmp/collei-server-${{ github.ref_name }}.zip . -x '.git/*'
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            collei-server-${{ github.ref_name }}.tar.gz
-            collei-server-${{ github.ref_name }}.zip
+            /tmp/collei-server-${{ github.ref_name }}.tar.gz
+            /tmp/collei-server-${{ github.ref_name }}.zip
           body_path: CHANGELOG.md
