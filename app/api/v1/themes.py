@@ -72,6 +72,7 @@ class ThemeInfo(BaseModel):
     description: str
     version: str
     author: str
+    link: str
     created_at: str
     file_count: int
     total_size: int
@@ -149,6 +150,7 @@ async def list_themes(
         description="Collei 默认展示页",
         version=_get_frontend_version(),
         author="Collei",
+        link="https://github.com/collei-monitor/collei-web",
         created_at="",
         file_count=0,
         total_size=0,
@@ -167,6 +169,7 @@ async def list_themes(
             description=entry.get("description", ""),
             version=entry.get("version", ""),
             author=entry.get("author", ""),
+            link=entry.get("link", ""),
             created_at=entry.get("created_at", ""),
             file_count=entry.get("file_count", 0),
             total_size=entry.get("total_size", 0),
@@ -304,6 +307,7 @@ async def upload_theme(
         "description": theme_meta.get("description", ""),
         "version": theme_meta.get("version", ""),
         "author": theme_meta.get("author", ""),
+        "link": theme_meta.get("link", ""),
         "created_at": now,
         "file_count": file_count,
         "total_size": total_size,
