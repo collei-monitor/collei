@@ -25,6 +25,7 @@ dependencies = [
     "cryptography>=42.0",
     "dns-lexicon>=3.23",
     "fastapi-sso>=0.16",
+    "packaging>=21.0",
 ]
 
 [project.optional-dependencies]
