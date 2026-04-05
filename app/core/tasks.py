@@ -92,7 +92,14 @@ class BackgroundTasks:
         规则: 缓存中 status == 1 (在线)
               且 last_online < now - offline_threshold_seconds
               → 更新缓存并写回数据库 status = 0 (离线)
+
+        启动时会等待一个宽限期（= offline_threshold_seconds），
+        避免重启后因 last_online 是旧值而将所有服务器误判为离线。
         """
+        # 启动宽限期: 等待足够时间让 Agent 恢复心跳，避免重启后误判全部离线
+        grace = int(config_cache.get("offline_threshold_seconds") or 10)
+        await asyncio.sleep(grace)
+
         while True:
             interval = 2  # fallback
             try:
