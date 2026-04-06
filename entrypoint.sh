@@ -14,7 +14,7 @@ chown -R root:root "$DATA_DIR"
 # ── 1. 复制内置数据文件（仅首次或文件不存在时）────────────────────────────
 #   注意：必须在 chown 之前执行，因为容器 cap_drop ALL 后 root 缺少
 #   DAC_OVERRIDE，无法向非 root 目录写入。
-for f in /app/data/*.mmdb; do
+for f in /app/data/*.mmdb /app/data/default.ico; do
   [ -f "$f" ] || continue
   name=$(basename "$f")
   if [ ! -f "$DATA_DIR/$name" ]; then
