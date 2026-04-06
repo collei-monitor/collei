@@ -75,7 +75,7 @@ jobs:
           build-args: |
             FRONTEND_VERSION=${{ steps.frontend.outputs.version }}
             COMMIT_HASH=${{ github.sha }}
-            VERSION=${{ github.ref_name }}
+            VERSION=${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
