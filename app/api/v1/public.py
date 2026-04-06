@@ -34,11 +34,11 @@ _THEMES_DIR = _DATA_DIR / "themes"
 _MANIFEST_PATH = _THEMES_DIR / "manifest.json"
 
 
-_DEFAULT_FAVICON = _DATA_DIR / "favicon.ico"
+_DEFAULT_FAVICON = _DATA_DIR / "default.ico"
 
 
 def _find_favicon() -> Path | None:
-    """优先返回上传的 favicon.*，否则回退到 favicon.ico."""
+    """优先返回上传的 favicon.*，否则回退到 default.ico."""
     for p in _DATA_DIR.glob("favicon.*"):
         if p.is_file():
             return p
