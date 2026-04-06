@@ -34,31 +34,36 @@ _THEMES_DIR = _DATA_DIR / "themes"
 _MANIFEST_PATH = _THEMES_DIR / "manifest.json"
 
 
+_DEFAULT_FAVICON = _DATA_DIR / "favicon.ico"
+
+
 def _find_favicon() -> Path | None:
+    """优先返回上传的 favicon.*，否则回退到 favicon.ico."""
     for p in _DATA_DIR.glob("favicon.*"):
         if p.is_file():
             return p
+    if _DEFAULT_FAVICON.is_file():
+        return _DEFAULT_FAVICON
     return None
 
 
 @router.get("/custom")
 async def get_custom_config():
     """公开获取自定义头部、Body、app_name、favicon_url（无需认证）."""
-    favicon = _find_favicon()
     return {
         "custom_headers": config_cache.get("custom_headers", ""),
         "custom_body": config_cache.get("custom_body", ""),
         "app_name": config_cache.get("app_name", "Collei"),
-        "favicon_url": "/api/v1/public/favicon" if favicon else "",
+        "favicon_url": "/api/v1/public/favicon",
     }
 
 
 @router.get("/favicon")
 async def get_favicon():
-    """返回上传的 Favicon 文件（无需认证）."""
+    """返回 Favicon 文件；优先返回上传的图标，否则返回默认图标."""
     favicon = _find_favicon()
     if not favicon:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No favicon uploaded")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No favicon available")
     media_type = mimetypes.guess_type(str(favicon))[0] or "application/octet-stream"
     return FileResponse(
         str(favicon),
