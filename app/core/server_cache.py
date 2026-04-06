@@ -101,6 +101,8 @@ class ServerCache:
         self._cycle_traffic: dict[str, int] = {}
         # uuid → Agent 功能状态 {ssh_enabled, terminal_enabled, file_api_enabled, tasks_enabled}
         self._features: dict[str, dict[str, bool]] = {}
+        # uuid → 冲突信息 {run_id, ip, last_seen}
+        self._conflicts: dict[str, dict[str, Any]] = {}
         # 节点数据是否变更（服务器/分组增删改时置 True）
         self._nodes_dirty: bool = False
 
@@ -146,9 +148,11 @@ class ServerCache:
                 "total_flow_in": ss.total_flow_in,
                 "current_disk_io": ss.current_disk_io,
                 "current_net_io": ss.current_net_io,
+                "current_run_id": ss.current_run_id,
             }
             for ss in statuses
         }
+        self._conflicts.clear()
 
         # 加载每台服务器的最新 load
         latest_sub = (
@@ -243,6 +247,7 @@ class ServerCache:
         total_flow_in: int | None = None,
         current_disk_io: str | None = None,
         current_net_io: str | None = None,
+        current_run_id: str | None = None,
     ) -> None:
         """更新服务器状态缓存."""
         existing = self._statuses.get(uuid)
@@ -255,6 +260,7 @@ class ServerCache:
                 "total_flow_in": total_flow_in,
                 "current_disk_io": current_disk_io,
                 "current_net_io": current_net_io,
+                "current_run_id": current_run_id,
             }
         else:
             if status is not None:
@@ -271,6 +277,8 @@ class ServerCache:
                 existing["current_disk_io"] = current_disk_io
             if current_net_io is not None:
                 existing["current_net_io"] = current_net_io
+            if current_run_id is not None:
+                existing["current_run_id"] = current_run_id
 
     def update_load(self, uuid: str, load_dict: dict[str, Any]) -> None:
         """更新服务器最新负载缓存."""
@@ -454,11 +462,33 @@ class ServerCache:
         return result
 
     def mark_offline(self, uuids: list[str]) -> None:
-        """在缓存中将指定服务器标记为离线."""
+        """在缓存中将指定服务器标记为离线，同时清除 run_id 和冲突信息."""
         for uuid in uuids:
             st = self._statuses.get(uuid)
             if st:
                 st["status"] = 0
+                st["current_run_id"] = None
+            self._conflicts.pop(uuid, None)
+
+    # ─────────────────────────────────────────────────────────────────
+    # 冲突检测
+    # ─────────────────────────────────────────────────────────────────
+
+    def set_conflict(self, uuid: str, run_id: str, ip: str | None) -> None:
+        """记录服务器 token 冲突信息."""
+        self._conflicts[uuid] = {
+            "run_id": run_id,
+            "ip": ip,
+            "last_seen": int(time.time()),
+        }
+
+    def get_conflict(self, uuid: str) -> dict[str, Any] | None:
+        """获取服务器冲突信息，无冲突返回 None."""
+        return self._conflicts.get(uuid)
+
+    def clear_conflict(self, uuid: str) -> None:
+        """清除服务器冲突信息."""
+        self._conflicts.pop(uuid, None)
 
     # ─────────────────────────────────────────────────────────────────────
     # 广播数据构建

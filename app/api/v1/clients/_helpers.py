@@ -32,6 +32,7 @@ def build_server_brief(server, status_obj=None, groups=None) -> ServerBrief:
 
 def build_server_full_detail(
     server, status_obj=None, groups=None, billing_brief=None,
+    conflict=None,
 ) -> ServerFullDetail:
     """构建服务器完整详情（包含所有字段、状态、分组和计费）."""
     return ServerFullDetail(
@@ -70,4 +71,5 @@ def build_server_full_detail(
         current_net_io=status_obj.current_net_io if status_obj else None,
         groups=[GroupRead.model_validate(g) for g in groups] if groups else [],
         billing=BillingBrief(**billing_brief) if billing_brief else None,
+        conflict=conflict,
     )

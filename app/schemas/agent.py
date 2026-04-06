@@ -36,6 +36,7 @@ class AgentRegisterResponse(BaseModel):
 class AgentVerifyRequest(BaseModel):
     """Agent 被动注册验证 — 使用管理员下发的 token."""
     token: str = Field(..., description="管理员下发的专属 token")
+    run_id: str | None = Field(None, description="Agent 启动时生成的唯一标识（UUID），用于冲突检测")
     name: str | None = Field(None, max_length=128, description="服务器名称（可选更新）")
     cpu_name: str | None = None
     virtualization: str | None = None
@@ -89,6 +90,7 @@ class AgentReportRequest(BaseModel):
     token 用于身份认证；hardware 和 load 可同时或单独上报。
     """
     token: str = Field(..., description="Agent 专属通信 token")
+    run_id: str | None = Field(None, description="Agent 启动时生成的唯一标识（UUID），用于冲突检测")
 
     # ── 硬件信息（可选，首次上报或变更时携带） ──
     name: str | None = Field(None, max_length=128, description="服务器名称")

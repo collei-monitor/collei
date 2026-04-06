@@ -18,7 +18,7 @@ import time
 import urllib.parse
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -137,6 +137,7 @@ async def agent_register(
 @router.post("/verify", response_model=AgentVerifyResponse)
 async def agent_verify(
     body: AgentVerifyRequest,
+    request: Request,
     db: AsyncSession = Depends(get_async_session),
 ):
     """Agent 被动注册验证使用管理员下发的 token
@@ -204,8 +205,41 @@ async def agent_verify(
 
     await crud_clients.update_server_hardware(db, server.uuid, hardware)
 
-    # 确保存在 server_status 记录
-    await crud_clients.upsert_server_status(db, server.uuid)
+    # ── run_id 冲突检测（防止同一 token 被多台服务器同时使用） ──
+    if body.run_id:
+        db_status = await crud_clients.get_server_status(db, server.uuid)
+        stored_run_id = db_status.current_run_id if db_status else None
+        server_online = (db_status.status == 1) if db_status else False
+
+        if stored_run_id and stored_run_id != body.run_id and server_online:
+            # 服务器在线且已有不同的 run_id → 另一个 Agent 实例正在使用此 token
+            client_ip = request.client.host if request.client else None
+            server_name = getattr(server, "name", None) or server.uuid
+            await audit.emit(
+                db, msg_type="server",
+                message="Agent 冲突检测（verify）",
+                detail=(
+                    f"{server_name}: 已有实例 run_id={stored_run_id}，"
+                    f"拒绝新实例 run_id={body.run_id} (IP: {client_ip})"
+                ),
+                source="agent",
+                server_uuid=server.uuid,
+            )
+            server_cache.set_conflict(server.uuid, body.run_id, client_ip)
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Another agent instance is already reporting with this token",
+            )
+
+        # 服务器离线 / 无 run_id / 同一 run_id → 接受并更新
+        await crud_clients.upsert_server_status(
+            db, server.uuid, current_run_id=body.run_id,
+        )
+        server_cache.update_status(server.uuid, current_run_id=body.run_id)
+        server_cache.clear_conflict(server.uuid)
+    else:
+        # 旧版 Agent 不发 run_id，仅确保 server_status 记录存在
+        await crud_clients.upsert_server_status(db, server.uuid)
 
     # 同步内存缓存（is_approved==1 时写入，0 时 update_server 内部直接返回）
     server_snap: dict = {f: getattr(server, f, None) for f in (
@@ -251,6 +285,7 @@ async def agent_verify(
 @router.post("/report", response_model=AgentReportResponse)
 async def agent_report(
     body: AgentReportRequest,
+    request: Request,
     db: AsyncSession = Depends(get_async_session),
 ):
     """Agent 混合上报 — 同时更新硬件信息并写入监控数据.
@@ -293,6 +328,47 @@ async def agent_report(
             )
 
     now = int(time.time())
+
+    # ── run_id 冲突检测（防止同一 token 被多台服务器同时使用） ──
+    if body.run_id:
+        # 获取当前已存储的 run_id
+        stored_run_id: str | None = None
+        if cached_uuid:
+            cached_status = server_cache._statuses.get(cached_uuid)
+            stored_run_id = cached_status.get("current_run_id") if cached_status else None
+        else:
+            db_status = await crud_clients.get_server_status(db, server.uuid)
+            stored_run_id = db_status.current_run_id if db_status else None
+
+        if stored_run_id and stored_run_id != body.run_id:
+            # 冲突：已有另一个 Agent 实例持有此 token
+            client_ip = request.client.host if request.client else None
+            server_name = (
+                cached_info.get("name") if cached_uuid
+                else getattr(server, "name", None)
+            ) or server.uuid
+            await audit.emit(
+                db, msg_type="server",
+                message="Agent 冲突检测",
+                detail=(
+                    f"{server_name}: 已有实例 run_id={stored_run_id}，"
+                    f"拒绝新实例 run_id={body.run_id} (IP: {client_ip})"
+                ),
+                source="agent",
+                server_uuid=server.uuid,
+            )
+            server_cache.set_conflict(server.uuid, body.run_id, client_ip)
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Another agent instance is already reporting with this token",
+            )
+
+        if not stored_run_id:
+            # 首次上报 run_id：保存到 DB 和缓存
+            await crud_clients.upsert_server_status(
+                db, server.uuid, current_run_id=body.run_id,
+            )
+            server_cache.update_status(server.uuid, current_run_id=body.run_id)
 
     # ── 更新硬件信息（如果有变更） ──
     hardware_fields = body.model_dump(
@@ -412,6 +488,8 @@ async def agent_report(
         last_online=now,
         boot_time=body.boot_time,
     )
+    if body.run_id is not None:
+        status_kwargs["current_run_id"] = body.run_id
     if body.total_flow_out is not None:
         status_kwargs["total_flow_out"] = body.total_flow_out
     if body.total_flow_in is not None:
@@ -433,6 +511,8 @@ async def agent_report(
     if hardware_fields:
         server_cache.update_server(server.uuid, hardware_fields)
     cache_status_kwargs: dict = dict(status=1, last_online=now, boot_time=body.boot_time)
+    if body.run_id is not None:
+        cache_status_kwargs["current_run_id"] = body.run_id
     if body.total_flow_out is not None:
         cache_status_kwargs["total_flow_out"] = body.total_flow_out
     if body.total_flow_in is not None:

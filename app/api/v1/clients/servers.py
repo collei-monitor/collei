@@ -93,7 +93,8 @@ async def list_servers(
         groups = await crud.get_server_groups(db, srv.uuid)
         st = statuses.get(srv.uuid)
         billing_brief = server_cache.build_billing_brief(srv.uuid)
-        result.append(build_server_full_detail(srv, st, groups, billing_brief))
+        conflict = server_cache.get_conflict(srv.uuid)
+        result.append(build_server_full_detail(srv, st, groups, billing_brief, conflict))
     return result
 
 
@@ -111,7 +112,8 @@ async def get_server(
     st = await crud.get_server_status(db, uuid)
     groups = await crud.get_server_groups(db, uuid)
     billing_brief = server_cache.build_billing_brief(uuid)
-    return build_server_full_detail(server, st, groups, billing_brief)
+    conflict = server_cache.get_conflict(uuid)
+    return build_server_full_detail(server, st, groups, billing_brief, conflict)
 
 
 @router.put("/servers/{uuid}", response_model=ServerFullDetail)

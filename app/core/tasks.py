@@ -111,14 +111,14 @@ class BackgroundTasks:
                 offline_uuids = server_cache.get_online_before(threshold)
 
                 if offline_uuids:
-                    # 先更新缓存
+                    # 先更新缓存（同时清除 run_id 和冲突信息）
                     server_cache.mark_offline(offline_uuids)
-                    # 再写回数据库
+                    # 再写回数据库（清除 status 和 current_run_id）
                     async with async_session_factory() as session:
                         await session.execute(
                             update(ServerStatus)
                             .where(ServerStatus.uuid.in_(offline_uuids))
-                            .values(status=0)
+                            .values(status=0, current_run_id=None)
                         )
                         await session.commit()
                     await audit.background(

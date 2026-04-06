@@ -185,6 +185,9 @@ class ServerFullDetail(BaseModel):
     # 计费信息
     billing: BillingBrief | None = None
 
+    # run_id 冲突信息（同一 token 被多个 Agent 实例使用时）
+    conflict: dict | None = None
+
     model_config = {"from_attributes": True}
 
 
