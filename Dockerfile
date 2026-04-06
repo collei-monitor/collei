@@ -34,9 +34,13 @@ RUN echo "${COMMIT_HASH}" > .commit_hash && \
 ARG FRONTEND_VERSION=latest
 RUN set -e; \
     if [ "$FRONTEND_VERSION" = "latest" ]; then \
-      DOWNLOAD_URL=$(curl -fsSL -o /dev/null -w '%{url_effective}' \
-        https://github.com/collei-monitor/collei-web/releases/latest); \
-      FRONTEND_VERSION=$(basename "$DOWNLOAD_URL"); \
+      REDIRECT_URL=$(curl -fsS -o /dev/null -w '%{redirect_url}' \
+        https://github.com/collei-monitor/collei-web/releases/latest 2>/dev/null || true); \
+      if [ -z "$REDIRECT_URL" ]; then \
+        echo "ERROR: Failed to resolve latest frontend version from GitHub." >&2; \
+        exit 1; \
+      fi; \
+      FRONTEND_VERSION=$(basename "$REDIRECT_URL"); \
     fi; \
     echo ">>> Downloading frontend ${FRONTEND_VERSION}..."; \
     mkdir -p frontend/dist; \
