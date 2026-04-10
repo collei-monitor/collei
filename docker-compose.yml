@@ -19,6 +19,8 @@ services:
       # - COLLEI_DEFAULT_ADMIN_PASSWORD=
       # - COLLEI_DEBUG=false
       # - COLLEI_APP_NAME=Collei
+      # Cookie 安全，允许在非HTTPS环境下使用，请在配置反向代理后删除
+      - COLLEI_COOKIE_SECURE=false
       # 反向代理信任（默认 *，信任所有；可指定具体 IP）
       # - COLLEI_TRUSTED_PROXIES=*
     # ── 安全加固 ──────────────────────────────────────────
