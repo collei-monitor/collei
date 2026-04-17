@@ -26,6 +26,7 @@ from app.schemas.clients import (
     GroupTopUpdate,
     GroupTopUpdateResponse,
     GroupUpdate,
+    GroupWithServersRead,
     MessageResponse,
     ServerBrief,
 )
@@ -98,13 +99,22 @@ async def batch_update_group_tops(
     )
 
 
-@router.get("/groups", response_model=list[GroupRead])
+@router.get("/groups", response_model=list[GroupWithServersRead])
 async def list_groups(
     _current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_session),
 ):
-    """获取所有分组列表."""
-    return await crud.get_all_groups(db)
+    """获取所有分组列表（含 server_uuids）."""
+    groups = await crud.get_all_groups(db)
+    group_server_map = await crud.get_all_group_server_uuids(db)
+    return [
+        GroupWithServersRead(
+            id=g.id, name=g.name, top=g.top,
+            created_at=g.created_at,
+            server_uuids=group_server_map.get(g.id, []),
+        )
+        for g in groups
+    ]
 
 
 @router.put("/groups/{group_id}", response_model=GroupRead)

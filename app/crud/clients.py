@@ -305,6 +305,23 @@ async def get_group_servers(db: AsyncSession, group_id: str) -> Sequence[Server]
     return result.scalars().all()
 
 
+async def get_group_server_uuids(db: AsyncSession, group_id: str) -> list[str]:
+    """获取分组下所有服务器的 UUID 列表."""
+    result = await db.execute(
+        select(ServerGroup.server_uuid).where(ServerGroup.group_id == group_id)
+    )
+    return list(result.scalars().all())
+
+
+async def get_all_group_server_uuids(db: AsyncSession) -> dict[str, list[str]]:
+    """一次查询获取所有分组的 server_uuid 映射."""
+    result = await db.execute(select(ServerGroup.group_id, ServerGroup.server_uuid))
+    mapping: dict[str, list[str]] = {}
+    for group_id, server_uuid in result.all():
+        mapping.setdefault(group_id, []).append(server_uuid)
+    return mapping
+
+
 async def set_server_groups(
     db: AsyncSession,
     server_uuid: str,
