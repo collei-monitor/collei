@@ -22,6 +22,8 @@ import traceback
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.sqlite_retry import run_with_sqlite_lock_retry
+
 logger = logging.getLogger("collei.audit")
 
 
@@ -87,7 +89,7 @@ class AuditLogger:
                     user_uuid=user_uuid,
                     server_uuid=server_uuid,
                 )
-                await session.commit()
+                await run_with_sqlite_lock_retry(session.commit)
         except Exception:
             logger.error("审计日志写入失败: %s", traceback.format_exc())
 

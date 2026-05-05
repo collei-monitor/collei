@@ -11,6 +11,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.sqlite_retry import run_with_sqlite_lock_retry
 from app.models.network import NetworkStatus, NetworkTarget, NetworkTargetDispatch
 
 
@@ -240,8 +241,15 @@ async def batch_insert_network_status(
         values["server_uuid"] = server_uuid
         rows.append(values)
     if rows:
-        stmt = sqlite_insert(NetworkStatus).values(rows).on_conflict_do_nothing()
-        await db.execute(stmt)
+        # SQLite 默认最多支持 999 个绑定参数，按列数分批插入以避免超限。
+        sqlite_max_variables = 999
+        columns_per_row = len(rows[0]) if rows else 1
+        chunk_size = max(1, sqlite_max_variables // columns_per_row)
+
+        for start in range(0, len(rows), chunk_size):
+            chunk = rows[start:start + chunk_size]
+            stmt = sqlite_insert(NetworkStatus).values(chunk).on_conflict_do_nothing()
+            await run_with_sqlite_lock_retry(lambda stmt=stmt: db.execute(stmt))
     return len(rows)
 
 

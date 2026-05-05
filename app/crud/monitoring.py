@@ -288,9 +288,7 @@ async def purge_old_load_minute(
     before: int,
 ) -> int:
     """清理 load_minute 中指定时间之前的数据."""
-    result = await db.execute(
-        delete(LoadMinute).where(LoadMinute.time < before)
-    )
+    result = await db.execute(delete(LoadMinute).where(LoadMinute.time < before))
     return result.rowcount or 0
 
 
@@ -300,9 +298,7 @@ async def purge_old_load_hour(
     before: int,
 ) -> int:
     """清理 load_hour 中指定时间之前的数据."""
-    result = await db.execute(
-        delete(LoadHour).where(LoadHour.time < before)
-    )
+    result = await db.execute(delete(LoadHour).where(LoadHour.time < before))
     return result.rowcount or 0
 
 

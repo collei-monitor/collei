@@ -8,7 +8,7 @@ from app.core.config import settings
 engine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.DEBUG,
-    connect_args={"check_same_thread": False},
+    connect_args={"check_same_thread": False, "timeout": 30},
 )
 
 
@@ -17,6 +17,7 @@ def _set_sqlite_pragma(dbapi_conn, connection_record):
     """启用 SQLite WAL 模式与外键约束以获得更好的并发性能."""
     cursor = dbapi_conn.cursor()
     cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA busy_timeout=30000")
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.close()
 
