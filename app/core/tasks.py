@@ -266,14 +266,15 @@ class BackgroundTasks:
 
                 server_uuids = list(server_cache._statuses.keys())
 
-                async with async_session_factory() as session:
-                    for uuid in server_uuids:
+                # 每台服务器单独会话提交，避免单个长事务长时间占用连接
+                for uuid in server_uuids:
+                    async with async_session_factory() as session:
                         await crud_monitoring.downsample_to_minute(
                             session, uuid,
                             window_start=window_start,
                             window_end=window_end,
                         )
-                    await session.commit()
+                        await session.commit()
 
             except Exception as e:
                 await audit.error(
@@ -306,14 +307,15 @@ class BackgroundTasks:
 
                 server_uuids = list(server_cache._statuses.keys())
 
-                async with async_session_factory() as session:
-                    for uuid in server_uuids:
+                # 每台服务器单独会话提交，避免单个长事务长时间占用连接
+                for uuid in server_uuids:
+                    async with async_session_factory() as session:
                         await crud_monitoring.downsample_to_hour(
                             session, uuid,
                             window_start=window_start,
                             window_end=window_end,
                         )
-                    await session.commit()
+                        await session.commit()
 
             except Exception as e:
                 await audit.error(

@@ -9,6 +9,12 @@ engine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.DEBUG,
     connect_args={"check_same_thread": False, "timeout": 30},
+    # SQLite 单文件数据库：限制单连接序列化所有写操作，
+    # 彻底避免多连接写锁竞争导致的 "database is locked" 错误。
+    # pool_timeout=60 确保高并发时（13+ agent 同时上报）等待队列不溢出。
+    pool_size=1,
+    max_overflow=0,
+    pool_timeout=60,
 )
 
 
