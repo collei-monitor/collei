@@ -531,6 +531,10 @@ async def agent_report(
     if body.features:
         server_cache.update_features(server.uuid, body.features)
 
+    # 关键数据（load_now / server_status）已写完，提前提交以释放写锁，
+    # 避免后续大批量 network_status 写入阻塞其他并发 agent 请求。
+    await db.commit()
+
     # ── 网络监控：写入探测结果 + 增量下发 ──
     network_dispatch_resp: dict | None = None
 

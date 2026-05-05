@@ -11,7 +11,6 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.sqlite_retry import run_with_sqlite_lock_retry
 from app.models.network import NetworkStatus, NetworkTarget, NetworkTargetDispatch
 
 
@@ -249,7 +248,7 @@ async def batch_insert_network_status(
         for start in range(0, len(rows), chunk_size):
             chunk = rows[start:start + chunk_size]
             stmt = sqlite_insert(NetworkStatus).values(chunk).on_conflict_do_nothing()
-            await run_with_sqlite_lock_retry(lambda stmt=stmt: db.execute(stmt))
+            await db.execute(stmt)
     return len(rows)
 
 
